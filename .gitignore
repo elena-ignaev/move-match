@@ -1,0 +1,3 @@
+.venv
+pretrained_models/hybrikx_rle_hrnet.pth
+pretrained_models/pose_landmarker_lite.task
