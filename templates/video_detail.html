@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+  <title>Video analysis — {{ video.original_name }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1rem; color: #202124; }
+    .videos { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+    .panel { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; min-width: 0; }
+    video { width: 100%; height: auto; background: #111; border-radius: 8px; }
+    dt { font-weight: 650; margin-top: .5rem; } dd { margin-left: 0; }
+    .error { background: #fff0f0; padding: .75rem; border-radius: 8px; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <a class="navbar-brand" href="#">MoveMatch</a>
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav mr-auto">
+        <li class="nav-item active">
+            <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="#">Link</a>
+        </li>
+        <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            Dropdown
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+            <a class="dropdown-item" href="#">Action</a>
+            <a class="dropdown-item" href="#">Another action</a>
+            <div class="dropdown-divider"></div>
+            <a class="dropdown-item" href="#">Something else here</a>
+            </div>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link disabled" href="#">Disabled</a>
+        </li>
+        </ul>
+        <form class="form-inline my-2 my-lg-0">
+        <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
+        <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
+        </form>
+    </div>
+    </nav>
+  <p><a href="{{ url_for('index') }}">← All videos</a></p>
+  <h1>{{ video.original_name }}</h1>
+  <p>Analysis status: <strong>{{ video.status }}</strong></p>
+
+  <div class="videos">
+    <section class="panel">
+      <h2>Original video</h2>
+      <video controls preload="metadata">
+        <source src="{{ url_for('original_video', video_id=video.id) }}">
+        Your browser cannot play this video format.
+      </video>
+    </section>
+
+    {% if video.annotated_filename %}
+    <section class="panel">
+      <h2>Pose Landmarker output</h2>
+      <video controls preload="metadata">
+        <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
+        Your browser cannot play this video format.
+      </video>
+    </section>
+    {% endif %}
+  </div>
+
+  <section class="panel">
+    <h2>Analysis details</h2>
+    {% if video.status == 'completed' %}
+      <dl>
+        <dt>Frames processed</dt><dd>{{ video.frame_count }}</dd>
+        <dt>Frame rate used</dt><dd>{{ '%.2f'|format(video.fps) }} FPS</dd>
+        <dt>Resolution</dt><dd>{{ video.width }} × {{ video.height }}</dd>
+      </dl>
+    {% elif video.status == 'failed' %}
+      <p class="error"><strong>Analysis failed:</strong> {{ video.error_message }}</p>
+    {% else %}
+      <p>Processing status: {{ video.status }}</p>
+    {% endif %}
+  </section>
+</body>
+</html>

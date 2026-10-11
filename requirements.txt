@@ -3,3 +3,8 @@ numpy
 torchvision
 pytorch 
 mediapipe
+opencv-python
+sqlalchemy
+pymysql
+Flask-SQLAlchemy
+ffmpeg

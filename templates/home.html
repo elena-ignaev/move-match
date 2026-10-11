@@ -11,8 +11,6 @@
     <title>Hello, world!</title>
   </head>
   <body>
-
-
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <a class="navbar-brand" href="#">MoveMatch</a>
@@ -50,14 +48,40 @@
     </div>
     </nav>
 
-    <!-- Page content -->
-    <label className="file">
-          <input
-            type="file"
-            accept="video/mp4,video/quicktime,video/webm"
-          />
-          Add a dance
-    </label>
+    <h1>Dance Pose Analysis</h1>
+    <section class="panel">
+      <h2>Upload a dance video</h2>
+      <p>The app saves the upload, runs MediaPipe Pose Landmarker, and creates an annotated video.</p>
+      <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+        <input type="file" name="video_file" accept="video/*" required>
+        <button type="submit">Upload and analyse</button>
+      </form>
+      <p><small>Processing runs during the upload request; long videos may take a while.</small></p>
+    </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="message {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="panel">
+    <h2>Uploaded videos</h2>
+    {% if videos %}
+      <ul>
+      {% for video in videos %}
+        <li>
+          <a href="{{ url_for('video_detail', video_id=video.id) }}">{{ video.original_name }}</a>
+          — <strong>{{ video.status }}</strong>
+          {% if video.created_at %}<small>({{ video.created_at.strftime('%Y-%m-%d %H:%M UTC') }})</small>{% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p>No videos uploaded yet.</p>
+    {% endif %}
+  </section>
+
     <!-- Optional JavaScript -->
     <!-- jQuery first, then Popper.js, then Bootstrap JS -->
     <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
