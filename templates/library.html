@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}MoveMatch | Past Videos{% endblock %}
+
+{% block content %}
+<section class="section-block">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Past videos</p>
+      <h1>Choose a dance video</h1>
+    </div>
+    <a class="button secondary" href="{{ url_for('index') }}">Upload new</a>
+  </div>
+
+  {% if videos %}
+    <div class="video-list">
+      {% for video in videos %}
+        <article class="video-row">
+          <div>
+            <h2><a href="{{ url_for('video_detail', video_id=video.id) }}">{{ video.original_name }}</a></h2>
+            <p>
+              <span class="status status-{{ video.status }}">{{ video.status }}</span>
+              {% if video.frame_count and video.fps %}
+                <span>{{ video.frame_count }} frames at {{ '%.2f'|format(video.fps) }} FPS</span>
+              {% endif %}
+              {% if video.created_at %}
+                <span>{{ video.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+              {% endif %}
+            </p>
+          </div>
+          <div class="row-actions">
+            <a class="button secondary compact" href="{{ url_for('video_detail', video_id=video.id) }}">Review</a>
+            {% if video.status == 'completed' and video.annotated_filename %}
+              <a class="button compact" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No videos uploaded yet.</p>
+      <a class="button" href="{{ url_for('index') }}">Upload a dance video</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,195 +1,64 @@
+{% extends "base.html" %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dance Practice Player</title>
+{% block title %}MoveMatch | Practice {{ video.original_name }}{% endblock %}
 
-    <style>
-        body {
-            max-width: 1000px;
-            margin: 30px auto;
-            padding: 0 16px;
-            font-family: Arial, sans-serif;
-        }
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/practice.css') }}">
+{% endblock %}
 
-        video {
-            display: block;
-            width: 100%;
-            max-height: 70vh;
-            background: #111;
-        }
-
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 10px;
-            margin: 16px 0;
-        }
-
-        button, select {
-            padding: 10px 14px;
-            cursor: pointer;
-        }
-
-        #timeline {
-            width: 100%;
-        }
-
-        #frameInfo {
-            font-family: monospace;
-            margin: 12px 0;
-        }
-    </style>
-</head>
-
-<body>
-    <h2>Dance Practice</h2>
-
-    <video id="danceVideo" preload="auto" playsinline>
-        <source
-            src="{{ url_for('annotated_video', video_id=video.id) }}"
-            type="video/mp4">
-        Your browser does not support HTML5 video.
-    </video>
-
-    <div class="controls">
-        <button id="prevFrame" type="button">◀ Previous frame</button>
-        <button id="playPause" type="button">Play</button>
-        <button id="nextFrame" type="button">Next frame ▶</button>
-
-        <label>
-            Speed:
-            <select id="speed">
-                <option value="0.25">0.25×</option>
-                <option value="0.5">0.5×</option>
-                <option value="0.75">0.75×</option>
-                <option value="1" selected>1×</option>
-            </select>
-        </label>
+{% block content %}
+<section class="practice-shell">
+  <div class="practice-heading">
+    <div>
+      <p class="eyebrow">Frame-by-frame practice</p>
+      <h1>{{ video.original_name }}</h1>
     </div>
+    <a class="button secondary" href="{{ url_for('video_detail', video_id=video.id) }}">Annotated review</a>
+  </div>
 
-    <input
-        id="timeline"
-        type="range"
-        min="0"
-        max="1000"
-        value="0"
-        step="1"
-        aria-label="Video timeline">
+  <video
+    id="danceVideo"
+    preload="auto"
+    playsinline
+    data-fps="{{ video.fps | default(30, true) }}"
+    aria-label="Annotated practice video"
+  >
+    <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
+    Your browser does not support HTML5 video.
+  </video>
 
-    <div id="frameInfo" aria-live="polite">
-        Frame: 0 | Time: 0.000 s
-    </div>
+  <div class="practice-controls" aria-label="Practice controls">
+    <button id="prevFrame" type="button">Previous frame</button>
+    <button id="playPause" type="button">Play</button>
+    <button id="nextFrame" type="button">Next frame</button>
 
-    <script>
-        const video = document.getElementById("danceVideo");
-        const prevButton = document.getElementById("prevFrame");
-        const nextButton = document.getElementById("nextFrame");
-        const playPauseButton = document.getElementById("playPause");
-        const speedSelect = document.getElementById("speed");
-        const timeline = document.getElementById("timeline");
-        const frameInfo = document.getElementById("frameInfo");
+    <label class="speed-control">
+      Speed
+      <select id="speed">
+        <option value="0.25">0.25x</option>
+        <option value="0.5">0.5x</option>
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1x</option>
+      </select>
+    </label>
+  </div>
 
-        // Replace with the actual FPS from your processed video
-        // if you know it from the OpenCV pipeline.
-        const FPS = {{ video.fps | default(30, true) }};
-        const FRAME_DURATION = 1 / FPS;
+  <input
+    id="timeline"
+    type="range"
+    min="0"
+    max="1000"
+    value="0"
+    step="1"
+    aria-label="Video timeline"
+  >
 
-        function updateInfo() {
-            const frame = Math.round(video.currentTime * FPS);
+  <div id="frameInfo" class="frame-info" aria-live="polite">
+    Frame: 0 | Time: 0.000 s
+  </div>
+</section>
+{% endblock %}
 
-            frameInfo.textContent =
-                `Frame: ${frame} | Time: ${video.currentTime.toFixed(3)} s`;
-
-            if (Number.isFinite(video.duration) && video.duration > 0) {
-                timeline.value = Math.round(
-                    video.currentTime / video.duration * 1000
-                );
-            }
-        }
-
-        function seekByFrame(direction) {
-            if (video.readyState < 1) return;
-
-            video.pause();
-
-            const lastTime = Number.isFinite(video.duration)
-                ? Math.max(0, video.duration - FRAME_DURATION)
-                : video.currentTime + direction * FRAME_DURATION;
-
-            const target = Math.max(
-                0,
-                Math.min(
-                    lastTime,
-                    video.currentTime + direction * FRAME_DURATION
-                )
-            );
-
-            video.currentTime = target;
-        }
-
-        prevButton.addEventListener("click", () => seekByFrame(-1));
-        nextButton.addEventListener("click", () => seekByFrame(1));
-
-        playPauseButton.addEventListener("click", () => {
-            if (video.paused) {
-                video.play().catch(console.error);
-            } else {
-                video.pause();
-            }
-        });
-
-        video.addEventListener("play", () => {
-            playPauseButton.textContent = "Pause";
-        });
-
-        video.addEventListener("pause", () => {
-            playPauseButton.textContent = "Play";
-        });
-
-        speedSelect.addEventListener("change", () => {
-            video.playbackRate = Number(speedSelect.value);
-        });
-
-        timeline.addEventListener("input", () => {
-            if (Number.isFinite(video.duration)) {
-                video.currentTime =
-                    Number(timeline.value) / 1000 * video.duration;
-            }
-        });
-
-        video.addEventListener("loadedmetadata", updateInfo);
-        video.addEventListener("seeked", updateInfo);
-        video.addEventListener("timeupdate", updateInfo);
-
-        document.addEventListener("keydown", (event) => {
-            // Don't hijack keyboard controls while editing a form field.
-            if (
-                event.target.matches("input, textarea, select") ||
-                event.target.isContentEditable
-            ) {
-                return;
-            }
-
-            if (event.code === "ArrowLeft") {
-                event.preventDefault();
-                seekByFrame(-1);
-            } else if (event.code === "ArrowRight") {
-                event.preventDefault();
-                seekByFrame(1);
-            } else if (event.code === "Space") {
-                event.preventDefault();
-
-                if (video.paused) {
-                    video.play().catch(console.error);
-                } else {
-                    video.pause();
-                }
-            }
-        });
-    </script>
-</body>
-</html>
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/practice.js') }}" defer></script>
+{% endblock %}
