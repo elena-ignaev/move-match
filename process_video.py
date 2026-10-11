@@ -140,11 +140,15 @@ def analyze_video(input_path: Path, output_path: Path):
         cap.release()
         writer.release()
 
+    if frame_index == 0:
+        raise ValueError("No readable frames were found in this video.")
+
     browser_path = output_path.with_name(
         f"{output_path.stem}_browser.mp4"
     )
     convert_for_browser(output_path, browser_path)
 
-    if frame_index == 0:
-        raise ValueError("No readable frames were found in this video.")
-    return {"frame_count": frame_index, "fps": fps, "width": width, "height": height}
+    if not browser_path.is_file() or browser_path.stat().st_size == 0:
+        raise RuntimeError(f"Browser-compatible video was not created: {browser_path}")
+
+    return {"frame_count": frame_index, "fps": fps, "width": width, "height": height, "output_path": str(browser_path)}

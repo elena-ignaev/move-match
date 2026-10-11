@@ -98,9 +98,10 @@ def upload():
     db.session.commit()
 
     try:
-        output_name = f"{Path(unique_name).stem}_annotated_browser.mp4"
+        output_name = f"{Path(unique_name).stem}_annotated.mp4"
         metadata = analyze_video(input_path, ANNOTATED_DIR / output_name)
-        video.annotated_filename = output_name
+        browser_path = Path(metadata["output_path"])
+        video.annotated_filename = browser_path.name
         video.status = "completed"
         video.frame_count = metadata["frame_count"]
         video.fps = metadata["fps"]
@@ -129,9 +130,14 @@ def original_video(video_id):
 @app.route("/videos/<int:video_id>/annotated")
 def annotated_video(video_id):
     video = db.get_or_404(Video,video_id)
+
     if not video.annotated_filename:
         abort(404)
-    return send_from_directory(ANNOTATED_DIR, video.annotated_filename, conditional=True)
+
+    print(video.annotated_filename)
+    print("Directory: ", ANNOTATED_DIR)
+
+    return send_from_directory(ANNOTATED_DIR, video.annotated_filename, mimetype="video/mp4", conditional=True)
 
 with app.app_context():
     db.create_all()
