@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
-from flask_sqlalchemy import SQLAlchemy
-
+from extensions import db
+from models import Video, Evaluation
 from werkzeug.utils import secure_filename
 from pathlib import Path
 
 from io import BytesIO
 import os
 import uuid
-from datetime import datetime, timezone
 
 import numpy as np
 import mediapipe as mp
@@ -33,22 +32,9 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{(BASE_DIR / 'videos.sqlite3
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 
-db = SQLAlchemy(app)
+db.init_app(app)
 
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "webm", "mkv", "m4v"}
-
-class Video(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    original_name = db.Column(db.String(255), nullable=False)
-    stored_filename = db.Column(db.String(255), unique=True, nullable=False)
-    annotated_filename = db.Column(db.String(255), nullable=True)
-    status = db.Column(db.String(30), nullable=False, default="uploaded")
-    frame_count = db.Column(db.Integer, nullable=True)
-    fps = db.Column(db.Float, nullable=True)
-    width = db.Column(db.Integer, nullable=True)
-    height = db.Column(db.Integer, nullable=True)
-    error_message = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 def allowed_file(filename):
     return (
@@ -133,11 +119,15 @@ def annotated_video(video_id):
 
     if not video.annotated_filename:
         abort(404)
-
-    print(video.annotated_filename)
-    print("Directory: ", ANNOTATED_DIR)
-
     return send_from_directory(ANNOTATED_DIR, video.annotated_filename, mimetype="video/mp4", conditional=True)
+
+@app.route("/dance-practice/<int:video_id>")
+def dance_practice(video_id):
+    video = db.get_or_404(Video, video_id)
+    return render_template(
+        "frame_player.html",
+        video=video
+    )
 
 with app.app_context():
     db.create_all()
