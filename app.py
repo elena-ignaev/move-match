@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
 from extensions import db
 from models import Video, Evaluation
+from sqlalchemy import inspect, text
 from werkzeug.utils import secure_filename
 from pathlib import Path
 
@@ -36,6 +37,27 @@ db.init_app(app)
 
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "webm", "mkv", "m4v"}
 
+def ensure_sqlite_columns():
+    """Keep the local dev database compatible without adding a migration stack."""
+    if not app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///"):
+        return
+
+    inspector = inspect(db.engine)
+    if not inspector.has_table("video"):
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("video")}
+    missing_columns = []
+    if "width" not in existing_columns:
+        missing_columns.append("ADD COLUMN width INTEGER")
+    if "height" not in existing_columns:
+        missing_columns.append("ADD COLUMN height INTEGER")
+
+    for statement in missing_columns:
+        db.session.execute(text(f"ALTER TABLE video {statement}"))
+    if missing_columns:
+        db.session.commit()
+
 def allowed_file(filename):
     return (
         "." in filename
@@ -49,8 +71,13 @@ def too_large(_error):
 
 @app.route('/')
 def index():
+    recent_videos = Video.query.order_by(Video.created_at.desc()).limit(3).all()
+    return render_template("home.html", recent_videos=recent_videos)
+
+@app.route("/library")
+def library():
     videos = Video.query.order_by(Video.created_at.desc()).all()
-    return render_template("home.html", videos=videos)
+    return render_template("library.html", videos=videos)
 
 # Handle video uploads
 @app.route('/upload', methods=['POST'])
@@ -124,13 +151,21 @@ def annotated_video(video_id):
 @app.route("/dance-practice/<int:video_id>")
 def dance_practice(video_id):
     video = db.get_or_404(Video, video_id)
+    if not video.annotated_filename:
+        flash("Practice is available after the annotated video has been created.", "error")
+        return redirect(url_for("video_detail", video_id=video.id))
     return render_template(
         "frame_player.html",
         video=video
     )
 
+@app.route("/videos/<int:video_id>/practice")
+def video_practice(video_id):
+    return redirect(url_for("dance_practice", video_id=video_id))
+
 with app.app_context():
     db.create_all()
+    ensure_sqlite_columns()
 
 if __name__ == "__main__":
     app.run(debug=True)

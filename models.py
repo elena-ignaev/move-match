@@ -13,6 +13,8 @@ class Video(db.Model):
 
     frame_count = db.Column(db.Integer, nullable=True)
     fps = db.Column(db.Float, nullable=True)
+    width = db.Column(db.Integer, nullable=True)
+    height = db.Column(db.Integer, nullable=True)
     
     error_message = db.Column(db.Text, nullable=True)
 

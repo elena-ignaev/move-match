@@ -1,91 +1,61 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <!-- Required meta tags -->
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+{% extends "base.html" %}
 
-    <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+{% block title %}MoveMatch | Home{% endblock %}
 
-    <title>Hello, world!</title>
-  </head>
-  <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-    <a class="navbar-brand" href="#">MoveMatch</a>
-    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-    </button>
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Single-user dance practice</p>
+    <h1>Start with a new dance video or continue from a past one.</h1>
+    <p class="lede">
+      Upload a video to create an annotated version, then use the practice player
+      for frame-by-frame review and slower playback.
+    </p>
+  </div>
+</section>
 
-    <div class="collapse navbar-collapse" id="navbarSupportedContent">
-        <ul class="navbar-nav mr-auto">
-        <li class="nav-item active">
-            <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="#">Link</a>
-        </li>
-        <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-            Dropdown
-            </a>
-            <div class="dropdown-menu" aria-labelledby="navbarDropdown">
-            <a class="dropdown-item" href="#">Action</a>
-            <a class="dropdown-item" href="#">Another action</a>
-            <div class="dropdown-divider"></div>
-            <a class="dropdown-item" href="#">Something else here</a>
-            </div>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link disabled" href="#">Disabled</a>
-        </li>
-        </ul>
-        <form class="form-inline my-2 my-lg-0">
-        <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
-        <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
-        </form>
-    </div>
-    </nav>
+<section class="choice-grid" aria-label="Video options">
+  <article class="panel">
+    <h2>Upload new dance video</h2>
+    <p>Accepted formats: MP4, MOV, AVI, WEBM, MKV, and M4V.</p>
+    <form class="upload-form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+      <input type="file" name="video_file" accept="video/*" required>
+      <button type="submit">Upload and analyse</button>
+    </form>
+    <p class="hint">Processing runs during upload, so longer videos may take a while.</p>
+  </article>
 
-    <h1>Dance Pose Analysis</h1>
-    <section class="panel">
-      <h2>Upload a dance video</h2>
-      <p>The app saves the upload, runs MediaPipe Pose Landmarker, and creates an annotated video.</p>
-      <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
-        <input type="file" name="video_file" accept="video/*" required>
-        <button type="submit">Upload and analyse</button>
-      </form>
-      <p><small>Processing runs during the upload request; long videos may take a while.</small></p>
-    </section>
+  <article class="panel accent-panel">
+    <h2>Access past dance video</h2>
+    <p>Open an existing upload, review its annotated version, or go straight into practice.</p>
+    <a class="button secondary" href="{{ url_for('library') }}">View past videos</a>
+  </article>
+</section>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="message {{ category }}">{{ message }}</div>
+{% if recent_videos %}
+<section class="section-block">
+  <div class="section-heading">
+    <h2>Recent videos</h2>
+    <a href="{{ url_for('library') }}">See all</a>
+  </div>
+  <div class="video-list">
+    {% for video in recent_videos %}
+      <article class="video-row">
+        <div>
+          <h3><a href="{{ url_for('video_detail', video_id=video.id) }}">{{ video.original_name }}</a></h3>
+          <p>
+            <span class="status status-{{ video.status }}">{{ video.status }}</span>
+            {% if video.created_at %}
+              <span>{{ video.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+            {% endif %}
+          </p>
+        </div>
+        {% if video.status == 'completed' and video.annotated_filename %}
+          <a class="button compact" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice</a>
+        {% endif %}
+      </article>
     {% endfor %}
-  {% endwith %}
-
-  <section class="panel">
-    <h2>Uploaded videos</h2>
-    {% if videos %}
-      <ul>
-      {% for video in videos %}
-        <li>
-          <a href="{{ url_for('video_detail', video_id=video.id) }}">{{ video.original_name }}</a>
-          — <strong>{{ video.status }}</strong>
-          {% if video.created_at %}<small>({{ video.created_at.strftime('%Y-%m-%d %H:%M UTC') }})</small>{% endif %}
-        </li>
-      {% endfor %}
-      </ul>
-    {% else %}
-      <p>No videos uploaded yet.</p>
-    {% endif %}
-  </section>
-
-    <!-- Optional JavaScript -->
-    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-  </body>
-</html>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
