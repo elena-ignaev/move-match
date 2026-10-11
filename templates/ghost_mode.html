@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}MoveMatch | Ghost Mode {{ video.original_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ghost_mode.css') }}">
+{% endblock %}
+
+{% block content %}
+<section
+  class="ghost-shell"
+  data-attempt-url="{{ url_for('create_attempt', video_id=video.id) }}"
+>
+  <div class="ghost-heading">
+    <div>
+      <p class="eyebrow">Ghost mode</p>
+      <h1>{{ video.original_name }}</h1>
+    </div>
+    <a class="button secondary" href="{{ url_for('video_detail', video_id=video.id) }}">Video review</a>
+  </div>
+
+  <section class="panel ghost-setup">
+    <div>
+      <h2>Practice speed</h2>
+      <div class="speed-options" aria-label="Reference playback speed">
+        {% for speed in speeds %}
+          <label>
+            <input type="radio" name="ghostSpeed" value="{{ speed }}" {% if loop.first %}checked{% endif %}>
+            {{ speed }}x
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <label class="overlay-toggle">
+      <input id="overlayToggle" type="checkbox" checked>
+      Translucent reference overlay
+    </label>
+
+    <div class="ghost-actions">
+      <button id="prepareCamera" type="button">Prepare camera</button>
+      <button id="startGhost" type="button" disabled>Start recording</button>
+      <button id="stopGhost" type="button" disabled>Stop</button>
+    </div>
+
+    <p id="ghostStatus" class="ghost-status" role="status" aria-live="polite">
+      Choose a speed, then prepare the camera.
+    </p>
+  </section>
+
+  <section class="ghost-stage" aria-label="Ghost practice stage">
+    <div class="learner-panel">
+      <video id="cameraPreview" autoplay muted playsinline></video>
+      <video id="referenceOverlay" muted playsinline preload="auto">
+        <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
+      </video>
+    </div>
+
+    <div class="reference-panel">
+      <h2>Reference</h2>
+      <video id="referenceVideo" muted playsinline preload="auto">
+        <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
+        Your browser cannot play this video format.
+      </video>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/ghost_mode.js') }}" defer></script>
+{% endblock %}

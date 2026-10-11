@@ -1,0 +1,114 @@
+.ghost-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.ghost-heading,
+.ghost-setup,
+.ghost-actions,
+.speed-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ghost-setup {
+  flex-wrap: wrap;
+}
+
+.speed-options {
+  justify-content: flex-start;
+  margin-top: 0.5rem;
+}
+
+.speed-options label,
+.overlay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 800;
+}
+
+.speed-options input,
+.overlay-toggle input {
+  accent-color: var(--primary);
+}
+
+.ghost-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.ghost-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+}
+
+.ghost-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.learner-panel,
+.reference-panel {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.learner-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+#cameraPreview,
+#referenceOverlay {
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+#cameraPreview {
+  transform: scaleX(-1);
+}
+
+#referenceOverlay {
+  position: absolute;
+  inset: 1rem;
+  width: calc(100% - 2rem);
+  height: calc(100% - 2rem);
+  opacity: 0.38;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+#referenceOverlay.is-hidden {
+  opacity: 0;
+}
+
+.reference-panel h2 {
+  margin-bottom: 0.75rem;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 860px) {
+  .ghost-heading,
+  .ghost-setup {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ghost-stage {
+    grid-template-columns: 1fr;
+  }
+}
