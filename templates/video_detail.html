@@ -12,7 +12,10 @@
       <p><span class="status status-{{ video.status }}">{{ video.status }}</span></p>
     </div>
     {% if video.status == 'completed' and video.annotated_filename %}
-      <a class="button" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice frame by frame</a>
+      <div class="row-actions">
+        <a class="button secondary" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice frame by frame</a>
+        <a class="button" href="{{ url_for('ghost_mode', video_id=video.id) }}">Ghost mode</a>
+      </div>
     {% endif %}
   </div>
 </section>
@@ -53,4 +56,26 @@
     <p>Processing status: {{ video.status }}</p>
   {% endif %}
 </section>
+
+{% if attempts %}
+<section class="panel">
+  <h2>Ghost attempts</h2>
+  <div class="video-list">
+    {% for attempt in attempts %}
+      <article class="video-row">
+        <div>
+          <h3>Attempt {{ attempt.id }}</h3>
+          <p>
+            <span class="status status-{{ attempt.status }}">{{ attempt.status }}</span>
+            <span>{{ attempt.speed }}x reference speed</span>
+            {% if attempt.created_at %}
+              <span>{{ attempt.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+            {% endif %}
+          </p>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}

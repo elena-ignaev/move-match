@@ -1,11 +1,12 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
 from extensions import db
-from models import Video, Evaluation
+from models import Attempt, Video, Evaluation
 from sqlalchemy import inspect, text
 from werkzeug.utils import secure_filename
 from pathlib import Path
 
 from io import BytesIO
+import json
 import os
 import uuid
 
@@ -22,10 +23,12 @@ BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
 UPLOAD_DIR = STORAGE_DIR / "uploads"
 ANNOTATED_DIR = STORAGE_DIR / "annotated"
+ATTEMPT_DIR = STORAGE_DIR / "attempts"
 MODEL_PATH = BASE_DIR / "pretrained_models" / "pose_landmarker_lite.task"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ANNOTATED_DIR.mkdir(parents=True, exist_ok=True)
+ATTEMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
@@ -36,6 +39,12 @@ app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 db.init_app(app)
 
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "webm", "mkv", "m4v"}
+ALLOWED_GHOST_SPEEDS = {0.25, 0.5, 0.75}
+ATTEMPT_EXTENSIONS_BY_MIME = {
+    "video/webm": ".webm",
+    "video/mp4": ".mp4",
+    "video/ogg": ".ogv",
+}
 
 def ensure_sqlite_columns():
     """Keep the local dev database compatible without adding a migration stack."""
@@ -44,17 +53,24 @@ def ensure_sqlite_columns():
 
     inspector = inspect(db.engine)
     if not inspector.has_table("video"):
-        return
+        video_missing_columns = []
+    else:
+        existing_columns = {column["name"] for column in inspector.get_columns("video")}
+        video_missing_columns = []
+        if "width" not in existing_columns:
+            video_missing_columns.append("ALTER TABLE video ADD COLUMN width INTEGER")
+        if "height" not in existing_columns:
+            video_missing_columns.append("ALTER TABLE video ADD COLUMN height INTEGER")
 
-    existing_columns = {column["name"] for column in inspector.get_columns("video")}
-    missing_columns = []
-    if "width" not in existing_columns:
-        missing_columns.append("ADD COLUMN width INTEGER")
-    if "height" not in existing_columns:
-        missing_columns.append("ADD COLUMN height INTEGER")
+    attempt_missing_columns = []
+    if inspector.has_table("attempt"):
+        attempt_columns = {column["name"] for column in inspector.get_columns("attempt")}
+        if "details_json" not in attempt_columns:
+            attempt_missing_columns.append("ALTER TABLE attempt ADD COLUMN details_json JSON")
 
+    missing_columns = video_missing_columns + attempt_missing_columns
     for statement in missing_columns:
-        db.session.execute(text(f"ALTER TABLE video {statement}"))
+        db.session.execute(text(statement))
     if missing_columns:
         db.session.commit()
 
@@ -63,6 +79,41 @@ def allowed_file(filename):
         "." in filename
         and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
     )
+
+def attempt_extension(recording_file):
+    mime_type = (recording_file.mimetype or "").split(";")[0].strip().lower()
+    if mime_type in ATTEMPT_EXTENSIONS_BY_MIME:
+        return ATTEMPT_EXTENSIONS_BY_MIME[mime_type]
+
+    suffix = Path(secure_filename(recording_file.filename or "")).suffix.lower()
+    if suffix in {".webm", ".mp4", ".ogv", ".ogg"}:
+        return suffix
+
+    return ".webm"
+
+def parse_sync_events(raw_events):
+    if not raw_events:
+        return []
+
+    try:
+        events = json.loads(raw_events)
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(events, list):
+        return []
+
+    parsed_events = []
+    for event in events:
+        if isinstance(event, dict):
+            parsed_events.append({
+                "type": event.get("type"),
+                "session_time_ms": event.get("session_time_ms"),
+                "reference_time": event.get("reference_time"),
+                "playback_rate": event.get("playback_rate"),
+                "wall_time": event.get("wall_time"),
+            })
+    return parsed_events
 
 @app.errorhandler(413)
 def too_large(_error):
@@ -133,7 +184,8 @@ def upload():
 @app.route("/videos/<int:video_id>")
 def video_detail(video_id):
     video = db.get_or_404(Video, video_id)
-    return render_template("video_detail.html", video=video)
+    attempts = Attempt.query.filter_by(video_id=video.id).order_by(Attempt.created_at.desc()).all()
+    return render_template("video_detail.html", video=video, attempts=attempts)
 
 @app.route("/videos/<int:video_id>/original")
 def original_video(video_id):
@@ -162,6 +214,71 @@ def dance_practice(video_id):
 @app.route("/videos/<int:video_id>/practice")
 def video_practice(video_id):
     return redirect(url_for("dance_practice", video_id=video_id))
+
+@app.route("/videos/<int:video_id>/ghost")
+def ghost_mode(video_id):
+    video = db.get_or_404(Video, video_id)
+    if not video.annotated_filename:
+        flash("Ghost mode is available after the annotated video has been created.", "error")
+        return redirect(url_for("video_detail", video_id=video.id))
+
+    return render_template("ghost_mode.html", video=video, speeds=sorted(ALLOWED_GHOST_SPEEDS))
+
+@app.route("/videos/<int:video_id>/attempts", methods=["POST"])
+def create_attempt(video_id):
+    video = db.get_or_404(Video, video_id)
+
+    if not video.annotated_filename:
+        return jsonify({"error": "Ghost mode requires an annotated reference video."}), 400
+
+    recording = request.files.get("recording")
+    if recording is None or not recording.filename:
+        return jsonify({"error": "No learner recording was provided."}), 400
+
+    try:
+        speed = float(request.form.get("speed", ""))
+    except ValueError:
+        return jsonify({"error": "Invalid practice speed."}), 400
+
+    if speed not in ALLOWED_GHOST_SPEEDS:
+        return jsonify({"error": "Unsupported practice speed."}), 400
+
+    filename = f"{uuid.uuid4().hex}{attempt_extension(recording)}"
+    recording.save(ATTEMPT_DIR / filename)
+
+    attempt = Attempt(
+        video_id=video.id,
+        recording_filename=filename,
+        speed=speed,
+        status="recorded",
+        details_json={
+            "mime_type": recording.mimetype,
+            "reference_started_at": request.form.get("reference_started_at"),
+            "reference_stopped_at": request.form.get("reference_stopped_at"),
+            "reference_time": request.form.get("reference_time"),
+            "sync_events": parse_sync_events(request.form.get("sync_events")),
+        }
+    )
+    db.session.add(attempt)
+    db.session.commit()
+
+    return jsonify({
+        "attempt_id": attempt.id,
+        "status": attempt.status,
+        "status_url": url_for("attempt_status", attempt_id=attempt.id),
+    }), 201
+
+@app.route("/attempts/<int:attempt_id>/status")
+def attempt_status(attempt_id):
+    attempt = db.get_or_404(Attempt, attempt_id)
+    return jsonify({
+        "attempt_id": attempt.id,
+        "video_id": attempt.video_id,
+        "speed": attempt.speed,
+        "status": attempt.status,
+        "details": attempt.details_json or {},
+        "created_at": attempt.created_at.isoformat() if attempt.created_at else None,
+    })
 
 with app.app_context():
     db.create_all()

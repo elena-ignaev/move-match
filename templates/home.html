@@ -51,7 +51,10 @@
           </p>
         </div>
         {% if video.status == 'completed' and video.annotated_filename %}
-          <a class="button compact" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice</a>
+          <div class="row-actions">
+            <a class="button secondary compact" href="{{ url_for('dance_practice', video_id=video.id) }}">Practice</a>
+            <a class="button compact" href="{{ url_for('ghost_mode', video_id=video.id) }}">Ghost</a>
+          </div>
         {% endif %}
       </article>
     {% endfor %}

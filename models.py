@@ -27,6 +27,28 @@ class Video(db.Model):
         cascade="all, delete-orphan"
     )
 
+    attempts = db.relationship(
+        "Attempt",
+        backref="video",
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
+
+class Attempt(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    video_id = db.Column(
+        db.Integer,
+        db.ForeignKey("video.id"),
+        nullable=False
+    )
+
+    recording_filename = db.Column(db.String(255), nullable=False)
+    speed = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="recorded")
+    details_json = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
 class Evaluation(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     
