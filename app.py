@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
-from extensions import db
+from extensions import db, migrate
 from models import Attempt, Video, Evaluation
 from sqlalchemy import inspect, text
 from werkzeug.utils import secure_filename
@@ -35,12 +35,16 @@ app = Flask(__name__)
 
 import dev_tools
 dev_tools.init_app(app)
+
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{(BASE_DIR / 'videos.sqlite3').as_posix()}"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", f"sqlite:///{(BASE_DIR / 'videos.sqlite3').as_posix()}"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 
 db.init_app(app)
+migrate.init_app(app, db)
 
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "webm", "mkv", "m4v"}
 ALLOWED_GHOST_SPEEDS = {0.25, 0.5, 0.75}
@@ -49,11 +53,6 @@ ATTEMPT_EXTENSIONS_BY_MIME = {
     "video/mp4": ".mp4",
     "video/ogg": ".ogv",
 }
-
-import os
-if os.environ.get("ENABLE_DEV_TOOLS") == "1":
-    from dev_tools import bp as dev_landmarks_bp
-    app.register_blueprint(dev_landmarks_bp)
 
 def ensure_sqlite_columns():
     """Keep the local dev database compatible without adding a migration stack."""

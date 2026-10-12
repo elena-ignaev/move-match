@@ -19,6 +19,7 @@ It works directly on files under storage/ and never touches SQLite:
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,25 @@ VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 
 bp = Blueprint("dev_landmarks", __name__, url_prefix="/dev/landmarks")
 
+# ------------------------------------------------------------ registration
+def dev_tools_enabled() -> bool:
+    return os.environ.get("ENABLE_DEV_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}
+ 
+ 
+def init_app(app, force: bool = False) -> bool:
+    """Register the blueprint on `app` if dev tools are enabled. Returns True if registered.
+ 
+    Safe to call more than once. Enabled when ENABLE_DEV_TOOLS is 1/true/yes/on,
+    or when force=True.
+    """
+    if not (force or dev_tools_enabled()):
+        app.logger.info("Dev tools not registered (set ENABLE_DEV_TOOLS=1 to enable).")
+        return False
+    if bp.name not in app.blueprints:
+        app.register_blueprint(bp)
+        app.config["DEV_TOOLS_ENABLED"] = True      # lets templates show a dev link
+        app.logger.warning("Dev tools ENABLED at %s (development only).", bp.url_prefix + "/")
+    return True
 
 # ------------------------------------------------------------------ helpers
 def _dir(kind: str) -> Path:

@@ -5,3 +5,4 @@ storage
 videos.sqlite3
 instance/db.sqlite3
 tests
+videos.backup.sqlite3
