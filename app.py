@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
 UPLOAD_DIR = STORAGE_DIR / "uploads"
 ANNOTATED_DIR = STORAGE_DIR / "annotated"
+LANDMARK_DIR = STORAGE_DIR / "landmarks"
 ATTEMPT_DIR = STORAGE_DIR / "attempts"
 MODEL_PATH = BASE_DIR / "pretrained_models" / "pose_landmarker_lite.task"
 
@@ -31,6 +32,9 @@ ANNOTATED_DIR.mkdir(parents=True, exist_ok=True)
 ATTEMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+
+import dev_tools
+dev_tools.init_app(app)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{(BASE_DIR / 'videos.sqlite3').as_posix()}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -45,6 +49,11 @@ ATTEMPT_EXTENSIONS_BY_MIME = {
     "video/mp4": ".mp4",
     "video/ogg": ".ogv",
 }
+
+import os
+if os.environ.get("ENABLE_DEV_TOOLS") == "1":
+    from dev_tools import bp as dev_landmarks_bp
+    app.register_blueprint(dev_landmarks_bp)
 
 def ensure_sqlite_columns():
     """Keep the local dev database compatible without adding a migration stack."""
@@ -163,7 +172,8 @@ def upload():
 
     try:
         output_name = f"{Path(unique_name).stem}_annotated.mp4"
-        metadata = analyze_video(input_path, ANNOTATED_DIR / output_name)
+        landmarks_name = f"{Path(unique_name).stem}.npz"
+        metadata = analyze_video(input_path, ANNOTATED_DIR / output_name, landmarks_path= LANDMARK_DIR / landmarks_name)
         browser_path = Path(metadata["output_path"])
         video.annotated_filename = browser_path.name
         video.status = "completed"

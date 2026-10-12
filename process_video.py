@@ -3,6 +3,10 @@ import mediapipe as mp
 from pathlib import Path
 import subprocess
 
+from landmark_store import (
+    LandmarkRecorder, build_metadata, is_current, read_metadata, save_landmarks,
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "pretrained_models" / "pose_landmarker_lite.task"
 
@@ -76,19 +80,12 @@ def draw_pose(frame, pose_landmarks):
         cv2.circle(frame, point, 3, (0, 100, 255), -1, cv2.LINE_AA)
     return frame
 
-
-def analyze_video(input_path: Path, output_path: Path):
-    """Run Pose Landmarker in VIDEO mode and write an annotated video."""
-    if not MODEL_PATH.is_file():
-        raise FileNotFoundError(
-            "Pose Landmarker model is missing. Download pose_landmarker_lite.task "
-            "and place it next to app.py. See README.md."
-        )
-
+def _open_video(input_path):
+    """Open a video with OpenCV; returns (cap, fps, width, height). Caller must release cap."""
     cap = cv2.VideoCapture(str(input_path))
     if not cap.isOpened():
         raise ValueError("OpenCV could not open this video. Try an MP4 encoded with H.264.")
-
+ 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 0 or fps > 240:
         fps = 30.0
@@ -97,20 +94,22 @@ def analyze_video(input_path: Path, output_path: Path):
     if width <= 0 or height <= 0:
         cap.release()
         raise ValueError("Could not read the video's dimensions.")
-
-    # mp4v is commonly available with OpenCV. Browser playback depends on installed codecs.
-    writer = cv2.VideoWriter(
-        str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
-    )
-    if not writer.isOpened():
-        cap.release()
-        raise RuntimeError("Could not create the annotated video output file.")
-
+    return cap, fps, width, height
+ 
+ 
+def _require_model():
+    if not MODEL_PATH.is_file():
+        raise FileNotFoundError(
+            "Pose Landmarker model is missing. Download pose_landmarker_lite.task "
+            "and place it next to app.py. See README.md."
+        )
+ 
+ 
+def _landmarker_options():
     BaseOptions = mp.tasks.BaseOptions
-    PoseLandmarker = mp.tasks.vision.PoseLandmarker
     PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
     RunningMode = mp.tasks.vision.RunningMode
-    options = PoseLandmarkerOptions(
+    return PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
         running_mode=RunningMode.VIDEO,
         num_poses=1,
@@ -118,15 +117,47 @@ def analyze_video(input_path: Path, output_path: Path):
         min_pose_presence_confidence=0.5,
         min_tracking_confidence=0.5,
     )
+ 
+ 
+def _landmark_metadata(fps, width, height, num_frames):
+    return build_metadata(
+        fps=fps,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        model_path=MODEL_PATH,
+        mediapipe_version=getattr(mp, "__version__", None),
+    )
 
+def analyze_video(input_path: Path, output_path: Path, landmarks_path: Path | None = None):
+    """Run Pose Landmarker in VIDEO mode and write an annotated video.
+ 
+    If landmarks_path is given (must end in .npz), the per-frame landmarks are also
+    saved in the versioned format defined in landmark_store.py, so evaluation never
+    has to re-run MediaPipe on the reference video.
+    """
+    _require_model()
+    cap, fps, width, height = _open_video(input_path)
+ 
+    # mp4v is commonly available with OpenCV. Browser playback depends on installed codecs.
+    writer = cv2.VideoWriter(
+        str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+    )
+    if not writer.isOpened():
+        cap.release()
+        raise RuntimeError("Could not create the annotated video output file.")
+ 
+    PoseLandmarker = mp.tasks.vision.PoseLandmarker
+    recorder = LandmarkRecorder()
+ 
     frame_index = 0
     try:
-        with PoseLandmarker.create_from_options(options) as landmarker:
+        with PoseLandmarker.create_from_options(_landmarker_options()) as landmarker:
             while True:
                 ok, frame = cap.read()
                 if not ok:
                     break
-
+ 
                 # VIDEO mode requires monotonically increasing timestamps in milliseconds.
                 timestamp_ms = int(frame_index * 1000.0 / fps)
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -134,21 +165,97 @@ def analyze_video(input_path: Path, output_path: Path):
                 result = landmarker.detect_for_video(mp_image, timestamp_ms)
                 if result.pose_landmarks:
                     frame = draw_pose(frame, result.pose_landmarks[0])
+                recorder.add(frame_index * 1000.0 / fps, result)
                 writer.write(frame)
                 frame_index += 1
     finally:
         cap.release()
         writer.release()
-
+ 
     if frame_index == 0:
         raise ValueError("No readable frames were found in this video.")
-
+ 
+    saved_landmarks_path = None
+    if landmarks_path is not None:
+        sequence = recorder.build(_landmark_metadata(fps, width, height, frame_index))
+        saved_landmarks_path = str(save_landmarks(landmarks_path, sequence))
+ 
     browser_path = output_path.with_name(
         f"{output_path.stem}_browser.mp4"
     )
     convert_for_browser(output_path, browser_path)
-
+ 
     if not browser_path.is_file() or browser_path.stat().st_size == 0:
         raise RuntimeError(f"Browser-compatible video was not created: {browser_path}")
+ 
+    return {
+        "frame_count": frame_index,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "output_path": str(browser_path),
+        "landmarks_path": saved_landmarks_path,
+        "detected_frames": recorder.detected_count,
+    }
 
-    return {"frame_count": frame_index, "fps": fps, "width": width, "height": height, "output_path": str(browser_path)}
+def precompute_landmarks(input_path: Path, landmarks_path: Path, force: bool = False):
+    """Extract and cache landmarks only: no annotated video, no FFmpeg.
+ 
+    Use this to backfill videos uploaded before landmark caching existed, or to
+    regenerate a stale cache after a model/schema/extraction-version change.
+ 
+    input_path must be the ORIGINAL upload, not the annotated video: drawn skeleton
+    lines would interfere with pose detection. Frame timing uses the same fps logic
+    as analyze_video(), so the timestamps line up with the annotated video.
+ 
+    Skips work if a current cache already exists (see landmark_store.is_current),
+    unless force=True.
+    """
+    landmarks_path = Path(landmarks_path)
+    if not force and is_current(landmarks_path, model_path=MODEL_PATH if MODEL_PATH.is_file() else None):
+        meta = read_metadata(landmarks_path)
+        return {
+            "skipped": True,
+            "landmarks_path": str(landmarks_path),
+            "frame_count": meta["num_frames"],
+            "fps": meta["extraction_fps"],
+            "width": meta["width"],
+            "height": meta["height"],
+            "detected_frames": None,
+        }
+ 
+    _require_model()
+    cap, fps, width, height = _open_video(input_path)
+    PoseLandmarker = mp.tasks.vision.PoseLandmarker
+    recorder = LandmarkRecorder()
+ 
+    frame_index = 0
+    try:
+        with PoseLandmarker.create_from_options(_landmarker_options()) as landmarker:
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                timestamp_ms = int(frame_index * 1000.0 / fps)
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                result = landmarker.detect_for_video(mp_image, timestamp_ms)
+                recorder.add(frame_index * 1000.0 / fps, result)
+                frame_index += 1
+    finally:
+        cap.release()
+ 
+    if frame_index == 0:
+        raise ValueError("No readable frames were found in this video.")
+ 
+    sequence = recorder.build(_landmark_metadata(fps, width, height, frame_index))
+    save_landmarks(landmarks_path, sequence)
+    return {
+        "skipped": False,
+        "landmarks_path": str(landmarks_path),
+        "frame_count": frame_index,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "detected_frames": recorder.detected_count,
+    }
