@@ -8,7 +8,7 @@ class Video(db.Model):
     original_name = db.Column(db.String(255), nullable=False)
     stored_filename = db.Column(db.String(255), unique=True, nullable=False)
     annotated_filename = db.Column(db.String(255), nullable=True)
-    
+    landmarks_path = db.Column(db.String(255), nullable=True)    
     status = db.Column(db.String(30), nullable=False, default="uploaded")
 
     frame_count = db.Column(db.Integer, nullable=True)

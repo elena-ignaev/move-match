@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dev: landmark tools</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; line-height: 1.45; }
+  section { border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 0; }
+  select, button, input[type=number] { font: inherit; padding: .3rem .5rem; margin: .15rem 0; }
+  pre { background: #8881; padding: .6rem; border-radius: 6px; overflow: auto; max-height: 18rem; font-size: .8rem; }
+  table { border-collapse: collapse; font-size: .85rem; }
+  td, th { border: 1px solid #8884; padding: .15rem .5rem; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .note { font-size: .85rem; opacity: .75; }
+  .stage { position: relative; max-width: 640px; }
+  .stage video { display: block; width: 100%; background: #000; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+  .bad { color: #d33; } .ok { color: #2a8; }
+</style>
+</head>
+<body>
+<h1>Dev: landmark tools</h1>
+<p class="note">Developer-only page. It reads and writes files under <code>storage/</code> and never touches the database or the normal upload flow.</p>
+
+<section>
+  <h2>1. Extract landmarks from an original upload</h2>
+  <div class="row">
+    <select id="uploadSel"></select>
+    <button id="computeBtn">Extract (skip if cache is current)</button>
+    <button id="forceBtn">Force re-extract</button>
+  </div>
+  <pre id="computeOut">(no result yet)</pre>
+  <p class="note">Runs synchronously: a long video will make this request wait. Use the original upload, not the annotated video.</p>
+</section>
+
+<section>
+  <h2>2. Inspect a landmark file</h2>
+  <div class="row">
+    <select id="npzSel"></select>
+    <button id="summaryBtn">Load summary</button>
+  </div>
+  <div id="summaryText"></div>
+  <pre id="summaryOut">(no summary yet)</pre>
+
+  <div class="row">
+    <label>Frame <input type="range" id="frameSlider" min="0" max="0" value="0" style="width:260px"> <span id="frameLabel">0</span></label>
+    <label><input type="checkbox" id="mirrorChk"> mirror</label>
+    <label><input type="checkbox" id="yawChk"> align yaw</label>
+    <label>min visibility <input type="number" id="minVis" value="0.5" step="0.1" min="0" max="1" style="width:4.5rem"></label>
+  </div>
+  <div id="poseText"></div>
+  <table id="angleTable"></table>
+  <details><summary>Normalized pose (33 x 3)</summary><pre id="poseOut"></pre></details>
+</section>
+
+<section>
+  <h2>3. Overlay check: do stored landmarks line up with the video?</h2>
+  <div class="row">
+    <select id="videoSel"></select>
+    <button id="overlayBtn">Load video + overlay</button>
+  </div>
+  <p class="note">Uses the landmark file selected in section 2. The <b style="color:#ff3b30">red</b> skeleton comes from the saved <code>.npz</code>; the green one is baked into the annotated video. They should coincide on every frame, including near the end of the clip.</p>
+  <div class="stage"><video id="vid" controls muted playsinline></video><canvas id="cv"></canvas></div>
+  <div class="row">
+    <button id="prevBtn">&larr; frame</button><button id="nextBtn">frame &rarr;</button>
+    <span id="overlayLabel" class="note"></span>
+  </div>
+</section>
+
+<script>
+const BASE = {{ url_for('dev_landmarks.index') | tojson }};
+const UPLOADS = {{ uploads | tojson }};
+const ANNOTATED = {{ annotated | tojson }};
+const NPZ = {{ landmark_files | tojson }};
+const CONNECTIONS = {{ connections | tojson }};
+const $ = (id) => document.getElementById(id);
+const enc = encodeURIComponent;
+
+function fill(sel, items, emptyText) {
+  sel.replaceChildren();
+  if (!items.length) { const o = document.createElement('option'); o.textContent = emptyText; o.value = ''; sel.append(o); return; }
+  for (const n of items) { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.append(o); }
+}
+fill($('uploadSel'), UPLOADS, '(no files in storage/uploads)');
+fill($('videoSel'), ANNOTATED, '(no files in storage/annotated)');
+fill($('npzSel'), NPZ, '(no .npz files yet: run step 1)');
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const body = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+// ---- 1. extract
+async function compute(force) {
+  const name = $('uploadSel').value; if (!name) return;
+  $('computeOut').textContent = 'Working...';
+  try {
+    const info = await api(BASE + 'compute/' + enc(name) + (force ? '?force=1' : ''), { method: 'POST' });
+    $('computeOut').textContent = JSON.stringify(info, null, 2);
+    if (!NPZ.includes(info.landmark_file)) { NPZ.push(info.landmark_file); fill($('npzSel'), NPZ, ''); }
+    $('npzSel').value = info.landmark_file;
+  } catch (e) { $('computeOut').textContent = 'Error: ' + e.message; }
+}
+$('computeBtn').onclick = () => compute(false);
+$('forceBtn').onclick = () => compute(true);
+
+// ---- 2. inspect
+let frames = 0;
+$('summaryBtn').onclick = async () => {
+  const name = $('npzSel').value; if (!name) return;
+  try {
+    const s = await api(BASE + 'summary/' + enc(name));
+    frames = s.frames;
+    $('frameSlider').max = Math.max(0, frames - 1);
+    $('frameSlider').value = 0;
+    const pct = (s.detected_ratio * 100).toFixed(1);
+    $('summaryText').innerHTML = '';
+    const p = document.createElement('p');
+    p.textContent = `${s.frames} frames @ ${s.fps} fps (${s.duration_s}s). Detected ${s.detected_frames} (${pct}%), ` +
+                    `longest missing run ${s.longest_missing_run} frames, mean visibility ${s.mean_visibility}.`;
+    p.className = s.detected_ratio >= 0.9 ? 'ok' : 'bad';
+    $('summaryText').append(p);
+    $('summaryOut').textContent = JSON.stringify(s, null, 2);
+    loadPose();
+  } catch (e) { $('summaryOut').textContent = 'Error: ' + e.message; }
+};
+
+async function loadPose() {
+  const name = $('npzSel').value; if (!name || !frames) return;
+  const i = Number($('frameSlider').value);
+  $('frameLabel').textContent = i;
+  const q = new URLSearchParams({ mirror: $('mirrorChk').checked ? 1 : 0, yaw: $('yawChk').checked ? 1 : 0, min_vis: $('minVis').value });
+  try {
+    const p = await api(BASE + 'pose/' + enc(name) + '/' + i + '?' + q);
+    const usable = p.pose.filter(r => r[0] !== null).length;
+    $('poseText').textContent = `t = ${p.t_ms} ms, detected: ${p.detected}, usable joints after masking: ${usable}/33`;
+    const t = $('angleTable'); t.replaceChildren();
+    const head = t.insertRow(); head.innerHTML = '<th>angle</th><th>degrees</th>';
+    for (const [k, v] of Object.entries(p.angles)) {
+      const r = t.insertRow(); r.insertCell().textContent = k; r.insertCell().textContent = v === null ? 'missing' : v.toFixed(1);
+    }
+    $('poseOut').textContent = JSON.stringify(p.pose);
+  } catch (e) { $('poseText').textContent = 'Error: ' + e.message; }
+}
+for (const id of ['frameSlider', 'mirrorChk', 'yawChk', 'minVis']) $(id).addEventListener('input', loadPose);
+
+// ---- 3. overlay
+let ov = null;
+const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
+function frameAt(t) { return Math.floor(t * ov.fps + 1e-3); }
+function draw(t) {
+  if (!ov) return;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const i = frameAt(t);
+  $('overlayLabel').textContent = `frame ${i} / ${ov.detected.length - 1}, t = ${t.toFixed(3)} s`;
+  if (i < 0 || i >= ov.detected.length || !ov.detected[i]) { if (i >= 0 && i < ov.detected.length) $('overlayLabel').textContent += ' (no detection)'; return; }
+  const pts = ov.image[i].map(([x, y]) => [x * cv.width, y * cv.height]);
+  ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 2;
+  for (const [a, b] of CONNECTIONS) { ctx.beginPath(); ctx.moveTo(...pts[a]); ctx.lineTo(...pts[b]); ctx.stroke(); }
+  ctx.fillStyle = '#ffd60a';
+  for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.2832); ctx.fill(); }
+}
+$('overlayBtn').onclick = async () => {
+  const video = $('videoSel').value, npz = $('npzSel').value; if (!video || !npz) return;
+  try {
+    ov = await api(BASE + 'overlay/' + enc(npz));
+    vid.src = BASE + 'media/' + enc(video);
+    vid.onloadedmetadata = () => { cv.width = vid.videoWidth; cv.height = vid.videoHeight; draw(0); };
+  } catch (e) { $('overlayLabel').textContent = 'Error: ' + e.message; }
+};
+if ('requestVideoFrameCallback' in vid) {
+  const loop = (now, meta) => { draw(meta.mediaTime); vid.requestVideoFrameCallback(loop); };
+  vid.requestVideoFrameCallback(loop);
+}
+vid.addEventListener('seeked', () => draw(vid.currentTime));
+vid.addEventListener('timeupdate', () => { if (!('requestVideoFrameCallback' in vid)) draw(vid.currentTime); });
+function step(d) { if (!ov) return; vid.pause(); vid.currentTime = (frameAt(vid.currentTime) + d + 0.5) / ov.fps; }
+$('prevBtn').onclick = () => step(-1);
+$('nextBtn').onclick = () => step(1);
+</script>
+</body>
+</html>

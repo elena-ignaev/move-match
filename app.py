@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, abort
-from extensions import db
+from extensions import db, migrate
 from models import Attempt, Video, Evaluation
 from sqlalchemy import inspect, text
 from werkzeug.utils import secure_filename
@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
 UPLOAD_DIR = STORAGE_DIR / "uploads"
 ANNOTATED_DIR = STORAGE_DIR / "annotated"
+LANDMARK_DIR = STORAGE_DIR / "landmarks"
 ATTEMPT_DIR = STORAGE_DIR / "attempts"
 MODEL_PATH = BASE_DIR / "pretrained_models" / "pose_landmarker_lite.task"
 
@@ -31,12 +32,19 @@ ANNOTATED_DIR.mkdir(parents=True, exist_ok=True)
 ATTEMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+
+import dev_tools
+dev_tools.init_app(app)
+
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{(BASE_DIR / 'videos.sqlite3').as_posix()}"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", f"sqlite:///{(BASE_DIR / 'videos.sqlite3').as_posix()}"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 
 db.init_app(app)
+migrate.init_app(app, db)
 
 ALLOWED_EXTENSIONS = {"mp4", "mov", "avi", "webm", "mkv", "m4v"}
 ALLOWED_GHOST_SPEEDS = {0.25, 0.5, 0.75}
@@ -163,7 +171,8 @@ def upload():
 
     try:
         output_name = f"{Path(unique_name).stem}_annotated.mp4"
-        metadata = analyze_video(input_path, ANNOTATED_DIR / output_name)
+        landmarks_name = f"{Path(unique_name).stem}.npz"
+        metadata = analyze_video(input_path, ANNOTATED_DIR / output_name, landmarks_path= LANDMARK_DIR / landmarks_name)
         browser_path = Path(metadata["output_path"])
         video.annotated_filename = browser_path.name
         video.status = "completed"

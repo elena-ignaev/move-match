@@ -8,3 +8,5 @@ sqlalchemy
 pymysql
 Flask-SQLAlchemy
 ffmpeg
+pytest
+flask-migrate

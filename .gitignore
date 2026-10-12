@@ -4,3 +4,5 @@ pretrained_models/pose_landmarker_lite.task
 storage
 videos.sqlite3
 instance/db.sqlite3
+tests
+videos.backup.sqlite3
