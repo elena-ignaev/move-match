@@ -175,6 +175,7 @@ def upload():
         metadata = analyze_video(input_path, ANNOTATED_DIR / output_name, landmarks_path= LANDMARK_DIR / landmarks_name)
         browser_path = Path(metadata["output_path"])
         video.annotated_filename = browser_path.name
+        video.landmarks_path = Path(metadata["landmarks_path"]).relative_to(STORAGE_DIR).as_posix()
         video.status = "completed"
         video.frame_count = metadata["frame_count"]
         video.fps = metadata["fps"]
