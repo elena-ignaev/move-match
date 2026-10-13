@@ -15,6 +15,7 @@ Conventions
 """
 
 from __future__ import annotations
+from collections import deque
 
 import numpy as np
 
@@ -66,21 +67,228 @@ def landmarks_to_array(landmarks) -> np.ndarray:
         raise ValueError(f"Expected {NUM_LANDMARKS} landmarks, got {arr.shape[0]}")
     return arr
 
+# --------------------------------------------------------------------------
+# Step 1: centering
+# --------------------------------------------------------------------------
+def _as_pose_array(xyz) -> np.ndarray:
+    """Float array whose last two axes are (33 landmarks, 3 coordinates)."""
+    xyz = np.asarray(xyz, dtype=np.float64)
+    if xyz.ndim < 2 or xyz.shape[-2:] != (NUM_LANDMARKS, 3):
+        raise ValueError(f"Expected shape (33, 3) or (T, 33, 3), got {xyz.shape}")
+    return xyz
+ 
+ 
+def hip_center(xyz: np.ndarray) -> np.ndarray:
+    """Midpoint of the left and right hips:  c_t = (p_t,left_hip + p_t,right_hip) / 2.
+ 
+    Input (33, 3) -> output (3,);  input (T, 33, 3) -> output (T, 3).
+    NaN if either hip is missing in that frame.
+    """
+    xyz = _as_pose_array(xyz)
+    return (xyz[..., L_HIP, :] + xyz[..., R_HIP, :]) / 2.0
+ 
+ 
+def center_pose(xyz: np.ndarray) -> np.ndarray:
+    """Subtract the hip midpoint from every joint:  p'_t,j = p_t,j - c_t.
+ 
+    Works on one pose (33, 3) or a whole sequence (T, 33, 3) and returns a new array.
+    This is a pure translation: distances between joints, limb directions and
+    scale are unchanged. Missing data: if a hip is NaN the whole frame becomes NaN
+    (there is no origin to subtract); a NaN in any other joint stays confined to
+    that joint. Low-visibility joints should be masked beforehand with
+    mask_low_visibility().
+    """
+    xyz = _as_pose_array(xyz)
+    return xyz - hip_center(xyz)[..., np.newaxis, :]
+
+# --------------------------------------------------------------------------
+# Step 2: scale
+# --------------------------------------------------------------------------
+# Design (evidence in scale_benchmark.py):
+#   * Measure the torso length in every frame, but do NOT divide each frame by its own
+#     value: bending shortens the torso, and per-frame jitter would be injected into
+#     every joint as fake motion.
+#   * Estimate one smooth body scale instead: a rolling HIGH percentile of the valid torso
+#     lengths (high, because bending only ever shortens the torso).
+#   * The window must be longer than the longest bend you expect (default 3 seconds).
+TORSO_JOINTS = (L_SHOULDER, R_SHOULDER, L_HIP, R_HIP)
+ 
+ 
+def window_from_seconds(seconds: float, fps: float) -> int:
+    """Window length in frames for a duration. Odd and >= 3, so a centred window is symmetric.
+ 
+    Specify windows in seconds: a frame count means something different at 30 and 60 fps.
+    """
+    if seconds <= 0 or fps <= 0:
+        raise ValueError("seconds and fps must be positive")
+    frames = int(round(seconds * fps))
+    return max(3, frames if frames % 2 == 1 else frames + 1)
+ 
+def shoulder_center(xyz: np.ndarray) -> np.ndarray:
+    """Midpoint of the left and right shoulders. (33, 3) -> (3,);  (T, 33, 3) -> (T, 3)."""
+    xyz = _as_pose_array(xyz)
+    return (xyz[..., L_SHOULDER, :] + xyz[..., R_SHOULDER, :]) / 2.0
+
+def torso_length(
+    xyz: np.ndarray,
+    vis: np.ndarray | None = None,
+    min_visibility: float = 0.5,
+    eps: float = 1e-6,
+) -> np.ndarray:
+    """Distance from the hip midpoint to the shoulder midpoint.
+ 
+    Input (33, 3) -> scalar array; input (T, 33, 3) -> (T,). NaN when a torso joint is
+    missing, when (given vis) any of the four torso joints is below min_visibility, or when
+    the length is ~0. Frames flagged NaN are ignored by estimate_body_scale, so partially
+    visible frames do not distort the scale.
+    """
+    xyz = _as_pose_array(xyz)
+    length = np.linalg.norm(shoulder_center(xyz) - hip_center(xyz), axis=-1)
+    if vis is not None:
+        vis = np.asarray(vis, dtype=np.float64)
+        if vis.shape != xyz.shape[:-1]:
+            raise ValueError(f"vis has shape {vis.shape}, expected {xyz.shape[:-1]}")
+        length = np.where(vis[..., list(TORSO_JOINTS)].min(axis=-1) >= min_visibility, length, np.nan)
+    return np.where(length > eps, length, np.nan)
+ 
+def _fill_gaps(x: np.ndarray) -> np.ndarray:
+    """Linearly interpolate NaNs, holding the first/last valid value at the edges (uses future frames)."""
+    ok = np.isfinite(x)
+    if not ok.any():
+        return x
+    idx = np.arange(len(x))
+    return np.interp(idx, idx[ok], x[ok])
+ 
+ 
+def _ffill(x: np.ndarray) -> np.ndarray:
+    """Hold the last valid value forward; leading NaNs stay NaN. Never looks at future frames."""
+    out = x.copy()
+    last = np.nan
+    for i in range(len(out)):
+        if np.isfinite(out[i]):
+            last = out[i]
+        else:
+            out[i] = last
+    return out
+ 
+ 
+def _check_scale_params(window, percentile, min_count) -> None:
+    if not 0 < percentile <= 100:
+        raise ValueError("percentile must be in (0, 100]")
+    if window is not None and window < 1:
+        raise ValueError("window must be a positive number of frames (or None for one global value)")
+    if min_count < 1:
+        raise ValueError("min_count must be at least 1")
+ 
+ 
+def estimate_body_scale(
+    lengths: np.ndarray,
+    window: int | None = 91,
+    percentile: float = 75.0,
+    causal: bool = False,
+    min_count: int = 5,
+) -> np.ndarray:
+    """Smooth body-scale estimate for every frame, from per-frame torso lengths.
+ 
+    lengths  (T,) torso length per frame, NaN where unusable (see torso_length).
+    window   frames in the rolling window; None gives one constant for the whole recording.
+             Use window_from_seconds() to convert from seconds.
+    percentile  high on purpose: bending only shortens the torso (75 by default).
+    causal   False: window centred on each frame; gaps filled by interpolation (offline,
+             e.g. the reference video). True: window is the last `window` frames only; gaps
+             hold the last estimate; leading frames stay NaN until min_count valid
+             measurements exist (matches StreamingBodyScale, usable for live feedback).
+    min_count  valid measurements a window needs before it produces an estimate.
+ 
+    Returns a (T,) float array. Raises ValueError if there is too little valid data, rather
+    than silently returning NaNs.
+    """
+    _check_scale_params(window, percentile, min_count)
+    L = np.asarray(lengths, dtype=np.float64)
+    if L.ndim != 1:
+        raise ValueError(f"lengths must be 1-D, got shape {L.shape}")
+    L = np.where(np.isfinite(L) & (L > 0), L, np.nan)
+    n_valid = int(np.isfinite(L).sum())
+    if n_valid < min_count:
+        raise ValueError(f"Only {n_valid} valid torso measurements; need at least {min_count} to estimate a scale")
+ 
+    T = L.size
+    if window is None:
+        return np.full(T, float(np.nanpercentile(L, percentile)))
+ 
+    out = np.full(T, np.nan)
+    half = window // 2
+    for t in range(T):
+        lo, hi = (max(0, t - window + 1), t + 1) if causal else (max(0, t - half), min(T, t + half + 1))
+        w = L[lo:hi]
+        w = w[np.isfinite(w)]
+        if w.size >= min_count:
+            out[t] = np.percentile(w, percentile)
+    if not np.isfinite(out).any():
+        raise ValueError("No window contained enough valid torso measurements; use a longer window or lower min_count")
+    return _ffill(out) if causal else _fill_gaps(out)
+ 
+ 
+class StreamingBodyScale:
+    """Frame-by-frame version of estimate_body_scale(causal=True), for live camera feedback.
+ 
+        scaler = StreamingBodyScale(window=window_from_seconds(3.0, fps))
+        s = scaler.update(torso_length(frame_xyz, vis=frame_vis))   # NaN until enough data
+    """
+ 
+    def __init__(self, window: int = 91, percentile: float = 75.0, min_count: int = 5) -> None:
+        _check_scale_params(window, percentile, min_count)
+        self.percentile, self.min_count = percentile, min_count
+        self._buffer: deque = deque(maxlen=window)
+        self._last = float("nan")
+ 
+    def update(self, length: float) -> float:
+        """Add one torso length (NaN if unusable) and return the current scale estimate."""
+        length = float(length)
+        self._buffer.append(length if np.isfinite(length) and length > 0 else np.nan)
+        valid = [v for v in self._buffer if np.isfinite(v)]
+        if len(valid) >= self.min_count:
+            self._last = float(np.percentile(valid, self.percentile))
+        return self._last
+ 
+    def reset(self) -> None:
+        self._buffer.clear()
+        self._last = float("nan")
+ 
+ 
+def scale_pose(xyz: np.ndarray, scale, eps: float = 1e-6) -> np.ndarray:
+    """Divide poses by a body scale: a scalar, or one value per frame for a (T, 33, 3) array.
+ 
+    Call on already centred poses (center_pose). A missing or ~0 scale gives a NaN frame.
+    """
+    xyz = _as_pose_array(xyz)
+    scale = np.asarray(scale, dtype=np.float64)
+    if scale.ndim != 0 and scale.shape != xyz.shape[:-2]:
+        raise ValueError(f"scale has shape {scale.shape}, expected a scalar or {xyz.shape[:-2]}")
+    safe = np.where(np.isfinite(scale) & (scale > eps), scale, np.nan)
+    return xyz / safe[..., np.newaxis, np.newaxis]
+ 
+ 
+    
 
 # --------------------------------------------------------------------------
 # Rotation
 # --------------------------------------------------------------------------
 def yaw_angle(xyz: np.ndarray) -> float:
     """Angle (radians) of the body's left-right axis in the horizontal x-z plane.
-
+ 
     0 for a person facing the camera squarely. Returns nan if the axis is degenerate.
+    Takes a single pose of shape (33, 3).
     """
+    xyz = _as_pose_array(xyz)
+    if xyz.ndim != 2:
+        raise ValueError(f"yaw_angle takes a single (33, 3) pose, got {xyz.shape}")
     v = (xyz[L_SHOULDER] - xyz[R_SHOULDER]) + (xyz[L_HIP] - xyz[R_HIP])
     if np.hypot(v[0], v[2]) < 1e-6:
         return float("nan")
     return float(np.arctan2(v[2], v[0]))
-
-
+ 
+ 
 def rotate_yaw(xyz: np.ndarray, theta: float) -> np.ndarray:
     """Rotate points about the vertical (y) axis by theta radians."""
     c, s = np.cos(theta), np.sin(theta)
@@ -88,44 +296,69 @@ def rotate_yaw(xyz: np.ndarray, theta: float) -> np.ndarray:
     out[..., 0] = xyz[..., 0] * c + xyz[..., 2] * s
     out[..., 2] = -xyz[..., 0] * s + xyz[..., 2] * c
     return out
+ 
+ 
+def _align_yaw_frame(pose: np.ndarray) -> np.ndarray:
+    """Rotate one pose so its left-right axis lies along +x; unchanged if the axis is degenerate."""
+    angle = yaw_angle(pose)
+    return rotate_yaw(pose, angle) if np.isfinite(angle) else pose
+ 
 
 
 # --------------------------------------------------------------------------
 # Normalization
 # --------------------------------------------------------------------------
-def normalize_pose(xyz: np.ndarray, align_yaw: bool = False, eps: float = 1e-6) -> np.ndarray:
-    """Hip-centre, scale by torso length, and optionally align yaw.
-
-    Returns an all-NaN (33, 3) array if the torso cannot be measured, which
-    pose_distance() treats as "no usable information".
-
+def normalize_pose(xyz: np.ndarray, align_yaw: bool = False, scale=None) -> np.ndarray:
+    """Hip-centre, scale and optionally yaw-align ONE pose of shape (33, 3).
+ 
+    Composition of center_pose and scale_pose. Returns an all-NaN pose if the hips or the
+    scale are unusable, which pose_distance() treats as "no usable information".
+ 
+    scale: body scale for this frame, e.g. the value from StreamingBodyScale.update() in
+    live use. If None, this frame's own torso length is used. That is only a fallback for
+    single images and tests: it is jittery (see Step 2 design note). For video, prefer
+    normalize_sequence() offline or StreamingBodyScale live.
+ 
     align_yaw: per-frame yaw alignment removes camera-angle differences but also
     erases *intentional* turns in the choreography. Leave it off for dances with
     turns, or align with one global angle instead (see yaw_angle / rotate_yaw).
     """
-    xyz = np.asarray(xyz, dtype=np.float64)
-    if xyz.shape != (NUM_LANDMARKS, 3):
-        raise ValueError(f"Expected shape (33, 3), got {xyz.shape}")
+    xyz = _as_pose_array(xyz)
+    if xyz.ndim != 2:
+        raise ValueError(f"normalize_pose takes a single (33, 3) pose, got {xyz.shape}")
+    s = torso_length(xyz) if scale is None else scale
+    out = scale_pose(center_pose(xyz), s)
+    return _align_yaw_frame(out) if align_yaw else out
 
-    hip_mid = (xyz[L_HIP] + xyz[R_HIP]) / 2.0
-    shoulder_mid = (xyz[L_SHOULDER] + xyz[R_SHOULDER]) / 2.0
-    torso = np.linalg.norm(shoulder_mid - hip_mid)
-    if not np.isfinite(torso) or torso < eps:
-        return np.full((NUM_LANDMARKS, 3), np.nan)
 
-    out = (xyz - hip_mid) / torso
+def normalize_sequence(
+    xyz_seq: np.ndarray,
+    align_yaw: bool = False,
+    vis: np.ndarray | None = None,
+    window: int | None = 91,
+    percentile: float = 75.0,
+    causal: bool = False,
+    min_count: int = 5,
+    min_visibility: float = 0.5,
+) -> np.ndarray:
+    """Normalize a (T, 33, 3) sequence: center, estimate one smooth body scale, divide.
+ 
+    Pipeline: center_pose -> torso_length -> estimate_body_scale -> scale_pose, then optional
+    per-frame yaw alignment (same caveat as normalize_pose). vis (T, 33) is only used to
+    discard unreliable torso measurements; mask other low-visibility joints beforehand with
+    mask_low_visibility(). window/percentile/causal/min_count: see estimate_body_scale.
+    Raises ValueError if there is too little valid torso data.
+    """
+    xyz_seq = _as_pose_array(xyz_seq)
+    if xyz_seq.ndim != 3:
+        raise ValueError(f"normalize_sequence takes (T, 33, 3), got {xyz_seq.shape}")
+    lengths = torso_length(xyz_seq, vis=vis, min_visibility=min_visibility)
+    scale = estimate_body_scale(lengths, window=window, percentile=percentile,
+                                causal=causal, min_count=min_count)
+    out = scale_pose(center_pose(xyz_seq), scale)
     if align_yaw:
-        angle = yaw_angle(out)
-        if np.isfinite(angle):
-            out = rotate_yaw(out, angle)
+        out = np.stack([_align_yaw_frame(f) for f in out])
     return out
-
-
-def normalize_sequence(xyz_seq: np.ndarray, align_yaw: bool = False) -> np.ndarray:
-    """Apply normalize_pose to every frame of a (T, 33, 3) array."""
-    xyz_seq = np.asarray(xyz_seq, dtype=np.float64)
-    return np.stack([normalize_pose(f, align_yaw=align_yaw) for f in xyz_seq])
-
 
 # --------------------------------------------------------------------------
 # Mirroring
@@ -187,16 +420,73 @@ def pose_distance(
 # --------------------------------------------------------------------------
 # Missing points
 # --------------------------------------------------------------------------
-def mask_low_visibility(
-    xyz: np.ndarray, vis: np.ndarray, min_visibility: float = 0.5
-) -> np.ndarray:
-    """Return a copy of xyz (..., 33, 3) with joints below min_visibility set to NaN.
 
-    Use this *before* normalize_pose so an unreliable hip or shoulder cannot
-    distort the torso scale; normalize_pose then returns an all-NaN pose.
+import numpy as np
+
+
+# --------------------------------------------------------------------------
+# Missing points
+# --------------------------------------------------------------------------
+
+def mask_low_visibility(
+    xyz: np.ndarray,
+    vis: np.ndarray,
+    min_visibility: float = 0.5,
+) -> np.ndarray:
     """
-    out = np.array(xyz, dtype=np.float64, copy=True)
-    out[np.asarray(vis, dtype=float) < min_visibility] = np.nan
+    Replace unreliable or non-finite landmarks with NaN.
+
+    Parameters
+    ----------
+    xyz:
+        Landmark coordinates with shape (..., 33, 3).
+        Supports either a single frame (33, 3) or a sequence
+        (T, 33, 3).
+    vis:
+        Visibility scores with shape (..., 33), matching xyz.
+    min_visibility:
+        Minimum acceptable visibility in [0, 1].
+
+    Returns
+    -------
+    np.ndarray
+        Float64 copy of xyz, with unreliable joints set to NaN.
+        A joint is considered valid only if all three coordinates
+        are finite and its visibility meets the threshold.
+    """
+    xyz = np.asarray(xyz, dtype=np.float64)
+    vis = np.asarray(vis, dtype=np.float64)
+
+    if xyz.ndim < 2 or xyz.shape[-2:] != (NUM_LANDMARKS, 3):
+        raise ValueError(
+            f"Expected xyz shape (..., {NUM_LANDMARKS}, 3), "
+            f"got {xyz.shape}"
+        )
+
+    expected_vis_shape = xyz.shape[:-1]
+    if vis.shape != expected_vis_shape:
+        raise ValueError(
+            f"Expected vis shape {expected_vis_shape}, got {vis.shape}"
+        )
+
+    if not np.isfinite(min_visibility) or not 0 <= min_visibility <= 1:
+        raise ValueError("min_visibility must be between 0 and 1")
+
+    out = xyz.copy()
+
+    # Require all XYZ coordinates to be finite for a joint to be valid.
+    valid_xyz = np.all(np.isfinite(out), axis=-1)
+
+    valid_visibility = (
+        np.isfinite(vis)
+        & (vis >= min_visibility)
+    )
+
+    valid = valid_xyz & valid_visibility
+
+    # Set all three coordinates of an invalid joint to NaN.
+    out[~valid] = np.nan
+
     return out
 
 
@@ -205,40 +495,104 @@ def interpolate_missing(
     timestamps: np.ndarray | None = None,
     max_gap: int = 5,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Linearly fill short NaN gaps in a (T, 33, 3) sequence, per joint and axis.
+    """
+    Interpolate short gaps in a sequence of 3D landmarks.
 
-    Only gaps of at most `max_gap` frames that have valid data on both sides are
-    filled; longer gaps and leading/trailing gaps stay NaN (never extrapolated).
-    Apply to raw world landmarks *before* normalize_sequence.
+    Only missing joint observations bounded by valid observations
+    on both sides are filled. Gaps longer than max_gap, as well as
+    leading and trailing gaps, remain missing.
 
-    Returns (filled_sequence, was_filled) where was_filled has shape (T, 33).
-    Treat filled points as lower confidence (e.g. cap their visibility) rather
-    than as real detections.
+    A joint observation is valid only when all three XYZ coordinates
+    are finite.
+
+    Parameters
+    ----------
+    xyz_seq:
+        Array with shape (T, NUM_LANDMARKS, 3).
+    timestamps:
+        Optional frame timestamps with shape (T,), strictly increasing.
+        If omitted, frame indices are used.
+    max_gap:
+        Maximum number of consecutive missing frames to fill.
+
+    Returns
+    -------
+    filled_sequence:
+        Copy of the sequence with eligible gaps interpolated.
+    was_filled:
+        Boolean array of shape (T, NUM_LANDMARKS).
+        True indicates that the joint was interpolated.
     """
     seq = np.asarray(xyz_seq, dtype=np.float64)
+
     if seq.ndim != 3 or seq.shape[1:] != (NUM_LANDMARKS, 3):
-        raise ValueError(f"Expected shape (T, 33, 3), got {seq.shape}")
+        raise ValueError(
+            f"Expected shape (T, {NUM_LANDMARKS}, 3), got {seq.shape}"
+        )
+
     T = seq.shape[0]
-    t = np.arange(T, dtype=np.float64) if timestamps is None else np.asarray(timestamps, float)
-    if t.shape != (T,):
-        raise ValueError("timestamps must have shape (T,)")
+
+    if not isinstance(max_gap, (int, np.integer)) or isinstance(
+        max_gap, (bool, np.bool_)
+    ):
+        raise TypeError("max_gap must be a non-negative integer")
+
+    if max_gap < 0:
+        raise ValueError("max_gap must be non-negative")
+
+    if timestamps is None:
+        t = np.arange(T, dtype=np.float64)
+    else:
+        t = np.asarray(timestamps, dtype=np.float64)
+
+        if t.shape != (T,):
+            raise ValueError(f"Expected timestamps shape ({T},), got {t.shape}")
+
+        if not np.all(np.isfinite(t)):
+            raise ValueError("timestamps must all be finite")
+
+        if T > 1 and np.any(np.diff(t) <= 0):
+            raise ValueError("timestamps must be strictly increasing")
 
     out = seq.copy()
-    filled = np.zeros((T, NUM_LANDMARKS), dtype=bool)
+    was_filled = np.zeros((T, NUM_LANDMARKS), dtype=bool)
+
+    if T == 0 or max_gap == 0:
+        return out, was_filled
+
+    # A joint observation is valid only when the complete XYZ vector
+    # is finite. This avoids mixing partially missing coordinates.
+    joint_valid = np.all(np.isfinite(seq), axis=-1)
+
     for j in range(NUM_LANDMARKS):
-        for c in range(3):
-            idx = np.flatnonzero(~np.isfinite(seq[:, j, c]))
-            if idx.size == 0:
+        valid_indices = np.flatnonzero(joint_valid[:, j])
+
+        if valid_indices.size < 2:
+            continue
+
+        # Examine gaps between consecutive valid observations.
+        for left, right in zip(valid_indices[:-1], valid_indices[1:]):
+            gap_length = right - left - 1
+
+            if gap_length <= 0 or gap_length > max_gap:
                 continue
-            for run in np.split(idx, np.flatnonzero(np.diff(idx) > 1) + 1):
-                s, e = run[0], run[-1]
-                if s == 0 or e == T - 1 or run.size > max_gap:
-                    continue
-                out[run, j, c] = np.interp(
-                    t[run], [t[s - 1], t[e + 1]], [seq[s - 1, j, c], seq[e + 1, j, c]]
-                )
-                filled[run, j] = True
-    return out, filled
+
+            # Interpolate only internal gaps, never extrapolate.
+            missing_indices = np.arange(left + 1, right)
+
+            alpha = (
+                (t[missing_indices] - t[left])
+                / (t[right] - t[left])
+            )
+
+            out[missing_indices, j, :] = (
+                seq[left, j, :][None, :] * (1.0 - alpha[:, None])
+                + seq[right, j, :][None, :] * alpha[:, None]
+            )
+
+            was_filled[missing_indices, j] = True
+
+    return out, was_filled
 
 
 # --------------------------------------------------------------------------
@@ -295,6 +649,33 @@ def compute_joint_angles(
             ang = np.where(ok, ang, np.nan)
         cols.append(ang)
     return np.stack(cols, axis=-1)
+
+
+def trunk_inclination(
+    xyz: np.ndarray,
+    vis: np.ndarray | None = None,
+    min_visibility: float = 0.5,
+    up: tuple[float, float, float] = (0.0, -1.0, 0.0),
+) -> np.ndarray:
+    """Angle in degrees (0..180) between the trunk (hip midpoint -> shoulder midpoint) and "up".
+ 
+    0 = upright, 90 = horizontal. xyz (..., 33, 3) -> (...,). NaN when the torso cannot be
+    measured (see torso_length). Not part of JOINT_ANGLE_DEFS: it has no left/right
+    partner and is not mirrored (a forward lean is a forward lean in a mirror).
+ 
+    up: the world "up" direction. MediaPipe world landmarks have y pointing DOWN, so the
+    default is (0, -1, 0). Check on a standing frame: shoulder_center - hip_center should have
+    a negative y. Unlike joint_angle this is measured against a fixed axis, so it is not
+    rotation-invariant: camera tilt changes it (yaw about y does not).
+    """
+    xyz = _as_pose_array(xyz)
+    up = np.asarray(up, dtype=np.float64)
+    up = up / np.linalg.norm(up)
+    length = torso_length(xyz, vis=vis, min_visibility=min_visibility)
+    trunk = shoulder_center(xyz) - hip_center(xyz)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cos = (trunk @ up) / length
+    return np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))
 
 
 def mirror_angles(angles: np.ndarray) -> np.ndarray:
