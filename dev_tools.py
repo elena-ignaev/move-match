@@ -1,14 +1,13 @@
 """Developer-only Flask blueprint for exercising landmark_store / pose_utils in isolation.
 
-Nothing in the normal app flow imports this. Register it only when you opt in:
+Nothing in the normal app flow imports this. Register it with one line, placed
+right after the Flask app object is created (at module level, or inside create_app):
 
-    # app.py, after the app is created
-    import os
-    if os.environ.get("ENABLE_DEV_TOOLS") == "1":
-        from dev_tools import bp as dev_landmarks_bp
-        app.register_blueprint(dev_landmarks_bp)
+    import dev_tools
+    dev_tools.init_app(app)
 
-Then run with ENABLE_DEV_TOOLS=1 and open /dev/landmarks/.
+It only registers when the environment variable ENABLE_DEV_TOOLS is 1/true/yes/on.
+Check with `flask routes`: the /dev/landmarks/... routes should be listed.
 
 It works directly on files under storage/ and never touches SQLite:
     storage/uploads/     original videos   (input for extraction)
@@ -32,16 +31,20 @@ from process_video import BASE_DIR, POSE_CONNECTIONS, precompute_landmarks
 
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 
-bp = Blueprint("dev_landmarks", __name__, url_prefix="/dev/landmarks")
+bp = Blueprint(
+    "dev_landmarks", __name__, url_prefix="/dev/landmarks",
+    template_folder="templates",   # resolved next to this file, not the host app
+)
+
 
 # ------------------------------------------------------------ registration
 def dev_tools_enabled() -> bool:
     return os.environ.get("ENABLE_DEV_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}
- 
- 
+
+
 def init_app(app, force: bool = False) -> bool:
     """Register the blueprint on `app` if dev tools are enabled. Returns True if registered.
- 
+
     Safe to call more than once. Enabled when ENABLE_DEV_TOOLS is 1/true/yes/on,
     or when force=True.
     """
@@ -53,6 +56,7 @@ def init_app(app, force: bool = False) -> bool:
         app.config["DEV_TOOLS_ENABLED"] = True      # lets templates show a dev link
         app.logger.warning("Dev tools ENABLED at %s (development only).", bp.url_prefix + "/")
     return True
+
 
 # ------------------------------------------------------------------ helpers
 def _dir(kind: str) -> Path:
@@ -182,7 +186,12 @@ def pose(name, i):
         abort(404, "Frame out of range")
     mirror = request.args.get("mirror") == "1"
     yaw = request.args.get("yaw") == "1"
-    min_vis = request.args.get("min_vis", default=0.5, type=float)
+    try:
+        min_vis = float(request.args.get("min_vis", "0.5"))
+    except ValueError:
+        abort(400, "min_vis must be a number between 0 and 1")
+    if not 0.0 <= min_vis <= 1.0:                                  # also rejects NaN
+        abort(400, "min_vis must be between 0 and 1")
 
     vis = seq.visibility[i]
     xyz = pu.mask_low_visibility(seq.landmarks[i], vis, min_visibility=min_vis)
