@@ -8,7 +8,14 @@ Throughout my performance preparation journey at NUS High, cleaning movements an
 MoveMatch intends to give objective numerical evaluations that standardize each dancer to the same reference dance video, allowing each individual to have their tailored practice. Ultimately, the project hopes to reduce the instructors' workload to bringing the group performance together, increasing the effectiveness group practices.
 
 ## Demo
-Pending!
+The user can:
+* Choose a short dance reference.
+* Practice a specific section.
+* Record an attempt.
+* Watch their attempt alongside the reference.
+* Receive understandable feedback.
+* Retry and compare results.
+Video pending!
 
 ## Screenshots
 ![Alt Text](assets/screenshot_1.png)
@@ -19,20 +26,14 @@ Pending!
 ![Alt Text](assets/screenshot_6.png)
 
 ## Contributions
-### Pose-tracking
-
+* Pose-tracking: Done with MediaPipe Pose Landmarker Lite model. 
+* Evaluations: Metrics for evaluation were defined by the developer. The implementation and testing was done with Claude under supervision and quality check of the developer.
+* Web framework: Flask routing and backend handling + Jinja2 templating with HTML, CSS, Js
+* Database: Done on SQLite, integrated with Flask using Flask-SQLAlchemy
+* Display: Video rendering and annotating was done with OpenCV
 
 ## Technical decisions
 * Due to limited computational resources, the functionality is limited to single-dancer use
 
-Model options:
-1. Google AI's pose landmarker lite (current)
-2. HybrIK: Hybrid analytical-neural inverse kinematics for body mesh recovery (cannot install all required setup on Mac)
-
-Project flow:
-1. Homepage --> User have options: Upload new dance video | Access past dance video
-2.1 Upload new dance video
---> Have an option to navigate to practice page, which offers: Frame by frame playing, slowed down video run
---> After confident with frame-by-frame practice, attempt speed-variant ghost mode practice (0.25x, 0.5x, 0.75x)
---> After ghost mode practice, attempt evaluation (scoring)
-For now, assume that the app is single-user
+# Future work
+I initially came across HybrIK: Hybrid analytical-neural inverse kinematics for body mesh recovery, but I couldn't install the repo for local testing on Mac. 3D body mesh promises even more precise sample(cannot install all required setup on Mac)
