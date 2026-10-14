@@ -1,7 +1,7 @@
 flask
 numpy
 torchvision
-pytorch 
+torch 
 mediapipe
 opencv-python
 sqlalchemy
