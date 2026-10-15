@@ -2,11 +2,15 @@
 
 Arrays stored in the file
 -------------------------
-timestamps       (T,)     float64  frame time in milliseconds (frame_index * 1000 / fps)
+timestamps       (T,)     float64  frame time in milliseconds on the playback timeline. Extraction runs on
+                                   the constant-frame-rate transcode the browser plays (media.py), so this
+                                   equals frame_index * 1000 / fps AND the browser's currentTime * 1000.
 landmarks        (T,33,3) float32  MediaPipe *world* landmarks (metres, hip-centred, y down), raw
 visibility       (T,33)   float32  per-landmark visibility in [0, 1] (0 where undetected)
 detected         (T,)     bool     False where MediaPipe found no pose (landmarks are NaN)
-image_landmarks  (T,33,3) float32  normalized image coordinates, for drawing overlays only
+image_landmarks  (T,33,3) float32  normalized image coordinates: overlays and in-frame checks
+brightness       (T,)     float32  mean luma of the frame, 0..255 (NaN if not measured); used to explain
+                                   poor tracking ("the room was dark"), never to score
 metadata_json    ()       str      JSON metadata (see build_metadata)
 
 Landmarks are stored RAW. Normalization (hip-centring, torso scaling, mirroring)
@@ -29,8 +33,8 @@ import numpy as np
 
 from pose_utils import landmarks_to_array
 
-SCHEMA_VERSION = 1            # bump when the file layout changes
-EXTRACTION_VERSION = "1"      # bump when extraction logic changes (e.g. detection options)
+SCHEMA_VERSION = 2            # bump when the file layout changes (2: brightness array)
+EXTRACTION_VERSION = "2"      # bump when extraction logic changes (2: run on the CFR playback transcode)
 LANDMARK_CONVENTION = "mediapipe_pose_33_world"
 NUM_LANDMARKS = 33
 
@@ -47,6 +51,11 @@ class LandmarkSequence:
     detected: np.ndarray
     image_landmarks: np.ndarray
     metadata: dict = field(default_factory=dict)
+    brightness: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        if self.brightness is None:
+            self.brightness = np.full(self.timestamps.shape[0], np.nan, dtype=np.float32)
 
     @property
     def num_frames(self) -> int:
@@ -60,6 +69,7 @@ class LandmarkSequence:
             "visibility": (t, NUM_LANDMARKS),
             "detected": (t,),
             "image_landmarks": (t, NUM_LANDMARKS, 3),
+            "brightness": (t,),
         }
         for name, shape in expected.items():
             actual = getattr(self, name).shape
@@ -85,6 +95,7 @@ def build_metadata(
     num_frames: int,
     model_path: str | Path | None = None,
     mediapipe_version: str | None = None,
+    timestamp_source: str = "frame_index * 1000 / fps",
     extra: dict | None = None,
 ) -> dict:
     meta = {
@@ -94,7 +105,7 @@ def build_metadata(
         "coordinate_units": "metres",
         "coordinate_origin": "hip midpoint (MediaPipe world), y axis points down",
         "timestamp_unit": "ms",
-        "timestamp_source": "frame_index * 1000 / fps",
+        "timestamp_source": timestamp_source,
         "extraction_fps": float(fps),
         "width": int(width),
         "height": int(height),
@@ -129,6 +140,7 @@ def save_landmarks(path: str | Path, seq: LandmarkSequence) -> Path:
         visibility=seq.visibility.astype(np.float32),
         detected=seq.detected.astype(bool),
         image_landmarks=seq.image_landmarks.astype(np.float32),
+        brightness=np.asarray(seq.brightness, dtype=np.float32),
         metadata_json=np.array(json.dumps(meta)),
     )
     os.replace(tmp, path)
@@ -145,8 +157,13 @@ def read_metadata(path: str | Path) -> dict:
 
 def load_landmarks(path: str | Path) -> LandmarkSequence:
     with np.load(path, allow_pickle=False) as data:
+        if "metadata_json" in data.files:
+            version = json.loads(str(data["metadata_json"])).get("schema_version")
+            if version != SCHEMA_VERSION:
+                raise LandmarkSchemaError(
+                    f"Schema version {version} != supported {SCHEMA_VERSION}; regenerate the landmarks.")
         missing = {"timestamps", "landmarks", "visibility", "detected",
-                   "image_landmarks", "metadata_json"} - set(data.files)
+                   "image_landmarks", "brightness", "metadata_json"} - set(data.files)
         if missing:
             raise LandmarkSchemaError(f"Missing arrays: {sorted(missing)}")
         meta = json.loads(str(data["metadata_json"]))
@@ -162,6 +179,7 @@ def load_landmarks(path: str | Path) -> LandmarkSequence:
             detected=data["detected"],
             image_landmarks=data["image_landmarks"],
             metadata=meta,
+            brightness=data["brightness"],
         )
     seq.validate()
     return seq
@@ -216,10 +234,12 @@ class LandmarkRecorder:
 
     def __init__(self) -> None:
         self._ts, self._world, self._image, self._vis, self._det = [], [], [], [], []
+        self._brightness = []
 
-    def add(self, timestamp_ms: float, result) -> bool:
+    def add(self, timestamp_ms: float, result, brightness: float = float("nan")) -> bool:
         """Record one frame; returns whether a pose was detected."""
         world, image, vis, detected = frame_arrays_from_result(result)
+        self._brightness.append(float(brightness))
         self._ts.append(float(timestamp_ms))
         self._world.append(world)
         self._image.append(image)
@@ -244,4 +264,5 @@ class LandmarkRecorder:
             detected=np.asarray(self._det, dtype=bool),
             image_landmarks=np.stack(self._image),
             metadata=metadata,
+            brightness=np.asarray(self._brightness, dtype=np.float32),
         )

@@ -11,7 +11,7 @@ Check with `flask routes`: the /dev/landmarks/... routes should be listed.
 
 It works directly on files under storage/ and never touches SQLite:
     storage/uploads/     original videos   (input for extraction)
-    storage/annotated/   browser videos    (played back for the overlay check)
+    storage/playback/    browser videos    (played back for the overlay check)
     storage/landmarks/   .npz caches       (created by this tool)
 """
 
@@ -118,7 +118,7 @@ def index():
     return render_template(
         "dev_landmarks.html",
         uploads=_list("uploads", VIDEO_EXTS),
-        annotated=_list("annotated", VIDEO_EXTS),
+        annotated=_list("playback", VIDEO_EXTS),
         landmark_files=_list("landmarks", {".npz"}),
         connections=POSE_CONNECTIONS,
         angle_names=pu.JOINT_ANGLE_NAMES,
@@ -226,5 +226,5 @@ def overlay(name):
 
 @bp.get("/media/<name>")
 def media(name):
-    """Serve a processed video from storage/annotated (supports range requests)."""
-    return send_from_directory(_dir("annotated"), _safe(name))
+    """Serve a processed video from storage/playback (supports range requests)."""
+    return send_from_directory(_dir("playback"), _safe(name))

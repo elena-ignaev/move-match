@@ -1,4 +1,4 @@
-"""Route tests for the dev-only landmark blueprint. Run: pytest test_dev_tools.py -v"""
+"""Route tests for the dev-only landmark blueprint. Run: pytest tests/test_dev_tools.py -v"""
 
 from pathlib import Path
 
@@ -32,10 +32,10 @@ def make_sequence():
 
 @pytest.fixture
 def storage(tmp_path):
-    for sub in ("uploads", "annotated", "landmarks"):
+    for sub in ("uploads", "playback", "landmarks"):
         (tmp_path / sub).mkdir()
     (tmp_path / "uploads" / "dance.mp4").write_bytes(b"x")
-    (tmp_path / "annotated" / "dance_browser.mp4").write_bytes(b"0123456789")
+    (tmp_path / "playback" / "dance_browser.mp4").write_bytes(b"0123456789")
     ls.save_landmarks(tmp_path / "landmarks" / "dance.npz", make_sequence())
     return tmp_path
 
@@ -97,7 +97,7 @@ def test_overlay_payload_shape(client):
     assert o["image"][MISSED][0] == [None, None]
 
 
-def test_media_serves_annotated_video_with_range(client):
+def test_media_serves_playback_video_with_range(client):
     r = client.get("/dev/landmarks/media/dance_browser.mp4", headers={"Range": "bytes=0-3"})
     assert r.status_code == 206 and r.data == b"0123"
 

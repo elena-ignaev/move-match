@@ -1,3 +1,5 @@
+> **Historical notes** on adopting Flask-Migrate. The migration history has since been given a real baseline (`0001_initial`); follow `docs/setup.md` ("Create the database" / "Existing databases") instead of these steps.
+
 # Step-by-step db update with flask-migrate
 0. Back up and install
 ```

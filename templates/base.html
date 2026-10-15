@@ -3,20 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}MoveMatch{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     {% block extra_css %}{% endblock %}
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="{{ url_for('index') }}">MoveMatch</a>
       <nav class="site-nav" aria-label="Primary navigation">
-        <a href="{{ url_for('index') }}">Upload</a>
-        <a href="{{ url_for('library') }}">Past videos</a>
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('library') }}">Videos</a>
+        <a href="{{ url_for('privacy') }}">Privacy</a>
       </nav>
     </header>
 
-    <main class="page">
+    <main id="main" class="page">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="messages" aria-live="polite">
@@ -29,6 +32,14 @@
 
       {% block content %}{% endblock %}
     </main>
+
+    <footer class="site-footer">
+      <p>
+        Pose tracking uses Google's pretrained MediaPipe Pose Landmarker; MoveMatch does not train a model.
+        Feedback is experimental and measured from a single camera: check the replay before trusting a flag.
+        <a href="{{ url_for('privacy') }}">What is stored and when it is deleted</a>.
+      </p>
+    </footer>
 
     {% block extra_js %}{% endblock %}
   </body>

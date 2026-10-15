@@ -1,11 +1,5 @@
-.practice-shell {
-  padding-top: 0.5rem;
-}
-
-.practice-shell video {
-  max-height: 68vh;
-  object-fit: contain;
-}
+.practice-shell { padding-top: 0.5rem; }
+.practice-shell video, .stage video { max-height: 66vh; object-fit: contain; }
 
 .practice-controls {
   display: grid;
@@ -13,27 +7,26 @@
   gap: 0.75rem;
   margin: 1rem 0;
 }
+.speed-control { display: grid; gap: 0.3rem; color: var(--muted); font-weight: 800; }
 
-.speed-control {
-  display: grid;
-  gap: 0.3rem;
-  color: var(--muted);
-  font-weight: 800;
-}
+#timeline { width: 100%; margin-top: 0.75rem; }
+.timeline-section { position: relative; height: 6px; margin: 0 0.5rem; border-radius: 3px; background: var(--line); }
+.timeline-section div { position: absolute; top: 0; height: 100%; border-radius: 3px; background: var(--accent); }
 
-#timeline {
-  width: 100%;
-  accent-color: var(--primary);
-}
+.frame-info { margin-top: 0.5rem; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-.frame-info {
-  margin-top: 0.75rem;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.section-panel h2 { margin-bottom: 0.75rem; }
+.section-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
 }
+.section-grid label { display: grid; gap: 0.25rem; color: var(--muted); font-weight: 700; }
+.section-grid label.check { display: inline-flex; }
+.section-panel .hint { margin: 1rem 0; }
 
 @media (max-width: 760px) {
-  .practice-controls {
-    grid-template-columns: 1fr;
-  }
+  .practice-controls { grid-template-columns: 1fr 1fr; }
 }

@@ -1,4 +1,4 @@
-"""Run with: pytest test_pose_utils.py -v"""
+"""Run with: pytest tests/test_pose_utils.py -v"""
 
 from types import SimpleNamespace
 
@@ -102,8 +102,11 @@ def test_degenerate_torso_gives_nan_and_zero_confidence(base_pose):
 
 
 def test_normalize_sequence_shape(base_pose):
+    # Two frames are fewer than the default min_count of 5 torso measurements, so use one global scale.
     seq = np.stack([base_pose, base_pose * 2])
-    assert normalize_sequence(seq).shape == (2, 33, 3)
+    assert normalize_sequence(seq, window=None, min_count=1).shape == (2, 33, 3)
+    with pytest.raises(ValueError):
+        normalize_sequence(seq)                       # refuses to guess a scale from too little data
 
 
 def test_landmarks_to_array_duck_typing(base_pose):
@@ -113,3 +116,49 @@ def test_landmarks_to_array_duck_typing(base_pose):
     assert np.allclose(arr[:, :3], base_pose) and np.allclose(arr[:, 3], 0.9)
     with pytest.raises(ValueError):
         landmarks_to_array(lms[:10])
+
+# ---------------------------------------------------------------- angles, mirroring, missing data
+from pose_utils import (JOINT_ANGLE_NAMES, compute_joint_angles, mask_low_visibility,  # noqa: E402
+                        mirror_angles)
+
+
+def test_identical_poses_have_identical_angles(base_pose):
+    a = compute_joint_angles(base_pose)
+    assert np.allclose(a, compute_joint_angles(base_pose.copy() * 1.4 + 3.0))      # scale/translation invariant
+
+
+def test_mirrored_pose_swaps_left_and_right_angles(base_pose):
+    angles = compute_joint_angles(base_pose)
+    mirrored = compute_joint_angles(mirror_pose(normalize_pose(base_pose)))
+    assert np.allclose(mirrored, mirror_angles(angles))
+    left, right = JOINT_ANGLE_NAMES.index("left_elbow"), JOINT_ANGLE_NAMES.index("right_elbow")
+    assert mirrored[left] == pytest.approx(angles[right])
+
+
+def test_missing_joint_gives_nan_angle_not_zero(base_pose):
+    pose = base_pose.copy()
+    pose[RIGHT_WRIST] = np.nan
+    angles = compute_joint_angles(pose)
+    assert np.isnan(angles[JOINT_ANGLE_NAMES.index("right_elbow")])
+    assert np.isfinite(angles[JOINT_ANGLE_NAMES.index("left_elbow")])
+
+
+@pytest.mark.parametrize("bad", [np.nan, -0.5, np.inf])
+def test_invalid_confidence_values_mask_the_joint(base_pose, bad):
+    vis = np.ones(33)
+    vis[RIGHT_WRIST] = bad
+    masked = mask_low_visibility(base_pose, vis)
+    assert np.isnan(masked[RIGHT_WRIST]).all()      # NaN, negative and infinite confidence are all "not seen"
+    assert np.isfinite(masked[0]).all()
+
+
+def test_confidence_above_one_is_clipped_in_distance(base_pose):
+    n = normalize_pose(base_pose)
+    vis = np.full(33, 5.0)                  # nonsense confidence must not weight a joint more than 1
+    d, conf = pose_distance(n, n, vis_a=vis, vis_b=vis)
+    assert d == pytest.approx(0.0) and conf == pytest.approx(1.0)
+
+
+def test_mask_rejects_out_of_range_threshold(base_pose):
+    with pytest.raises(ValueError):
+        mask_low_visibility(base_pose, np.ones(33), min_visibility=1.5)

@@ -1,0 +1,9 @@
+{# Six-step journey indicator. Pass current=1..6. #}
+<ol class="journey" aria-label="Practice journey">
+  {% for label in ["Choose a reference", "Practise a section", "Record an attempt", "Replay side by side", "Read feedback", "Retry and compare"] %}
+    <li class="{% if loop.index == current %}is-current{% elif loop.index < current %}is-done{% endif %}"
+        {% if loop.index == current %}aria-current="step"{% endif %}>
+      <span class="journey-num">{{ loop.index }}</span> {{ label }}
+    </li>
+  {% endfor %}
+</ol>

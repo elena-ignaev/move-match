@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+/* The hidden attribute must win over component display rules (e.g. display: flex). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -312,3 +317,115 @@ dd {
     font-size: 2.2rem;
   }
 }
+
+/* ---------------------------------------------------------------- shared components (v2) */
+.skip-link { position: absolute; left: -999px; top: 0; }
+.skip-link:focus { left: 1rem; top: 1rem; z-index: 10; padding: 0.5rem 1rem; background: #fff; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.h-medium { font-size: clamp(1.6rem, 3.5vw, 2.4rem); }
+
+.site-footer {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.journey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.journey li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.journey-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #edf1ef;
+  font-size: 0.78rem;
+}
+.journey li.is-done .journey-num { background: #dff3e7; color: #17643d; }
+.journey li.is-current { border-color: var(--primary); color: var(--primary-dark); }
+.journey li.is-current .journey-num { background: var(--primary); color: #fff; }
+
+button.secondary-button,
+.secondary-button {
+  background: transparent;
+  color: var(--primary-dark);
+}
+button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+.compact-button { min-height: 32px; padding: 0.3rem 0.7rem; font-size: 0.85rem; }
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+button:focus-visible, .button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type="number"] {
+  width: 6.5rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+input[type="range"] { accent-color: var(--primary); vertical-align: middle; }
+label.check { display: inline-flex; align-items: center; gap: 0.4rem; }
+progress { width: 100%; height: 0.8rem; accent-color: var(--primary); }
+
+.row-actions.start { justify-content: flex-start; flex-wrap: wrap; }
+.inline-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.2rem; color: var(--muted); font-weight: 700; }
+.inline-controls select { width: auto; }
+.meta-line span { margin-right: 0.75rem; color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.status-processing, .status-queued, .status-uploaded { background: #fff3d6; color: #7a5300; }
+.status-ready, .status-close { background: #dff3e7; color: #17643d; }
+.status-withheld, .status-needs_reprocessing, .status-minor { background: #eef1f6; color: #374766; }
+.status-review { background: #fde4e3; color: var(--danger); }
+.status-not_visible, .status-not_covered { background: #edf1ef; color: var(--muted); }
+
+.stage { position: relative; }
+.stage-media { position: relative; }
+.stage-media.mirrored { transform: scaleX(-1); }
+.overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.data-table caption { text-align: left; font-weight: 800; padding: 0.5rem 0; }
+.data-table th, .data-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); text-align: left; }
+.data-table th { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; }
+.data-table tr.is-current td { background: #f1f8f6; font-weight: 700; }
+.data-table.small { font-size: 0.85rem; }
+
+.compact-list { margin-top: 1rem; }
+.prose h2 { margin-top: 1.5rem; }
+.prose li { margin-bottom: 0.35rem; }
+.code, pre.code { padding: 0.75rem 1rem; border-radius: 6px; background: #1e2423; color: #e8f2ef; overflow-x: auto; }
+.danger-zone { border-color: #f1c9c6; }
+.message.warn, .warn { color: #7a5300; }
