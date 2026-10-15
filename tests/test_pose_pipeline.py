@@ -1,4 +1,4 @@
-"""Tests for the single reference/learner convention. Run with: pytest test_pose_pipeline.py -v"""
+"""Tests for the single reference/learner convention. Run with: pytest tests/test_pose_pipeline.py -v"""
 
 import json
 

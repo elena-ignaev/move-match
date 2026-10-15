@@ -1,72 +1,120 @@
 {% extends "base.html" %}
-
-{% block title %}MoveMatch | Ghost Mode {{ video.original_name }}{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/ghost_mode.css') }}">
-{% endblock %}
-
+{% block title %}MoveMatch | Record {{ video.original_name }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='css/ghost_mode.css') }}">{% endblock %}
 {% block content %}
-<section
-  class="ghost-shell"
-  data-attempt-url="{{ url_for('create_attempt', video_id=video.id) }}"
->
+<section class="ghost-shell"
+         data-video-id="{{ video.id }}"
+         data-attempt-url="{{ url_for('create_attempt', video_id=video.id) }}"
+         data-landmarks-url="{{ url_for('api_video_landmarks', video_id=video.id) }}"
+         data-duration="{{ video.duration_s or 0 }}"
+         data-fps="{{ video.fps or 30 }}"
+         data-max-mb="{{ limits.attempt_mb }}">
   <div class="ghost-heading">
     <div>
-      <p class="eyebrow">Ghost mode</p>
-      <h1>{{ video.original_name }}</h1>
+      <p class="eyebrow">Step 3 · Record an attempt</p>
+      <h1 class="h-medium">{{ video.original_name }}</h1>
     </div>
-    <a class="button secondary" href="{{ url_for('video_detail', video_id=video.id) }}">Video review</a>
+    <a class="button secondary" href="{{ url_for('video_practice', video_id=video.id) }}">← Practise first</a>
+  </div>
+  {% set current = 3 %}{% include "_journey.html" %}
+
+  <form id="ghostSettings" class="panel ghost-setup">
+    <fieldset id="settingsFieldset">
+      <legend class="sr-only">Practice settings</legend>
+      <div class="setting-group">
+        <span class="setting-label">Section</span>
+        <label>Start (s) <input id="sectionStart" type="number" min="0" step="0.1" value="0"></label>
+        <label>End (s) <input id="sectionEnd" type="number" min="0" step="0.1" value="{{ '%.1f'|format(video.duration_s or 0) }}"></label>
+      </div>
+      <div class="setting-group">
+        <span class="setting-label">Speed</span>
+        <div class="speed-options" role="radiogroup" aria-label="Reference speed">
+          {% for speed in speeds %}
+            <label><input type="radio" name="ghostSpeed" value="{{ speed }}" {% if speed == 0.5 %}checked{% endif %}> {{ speed }}×</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="setting-group">
+        <span class="setting-label">Mirror</span>
+        <label class="check"><input id="mirrorView" type="checkbox" checked> Mirror view (camera and reference)</label>
+        <label>Dance side
+          <select id="followMode">
+            <option value="same_side" selected>Same side as the dancer</option>
+            <option value="mirror">Mirror image (swap left and right)</option>
+          </select>
+        </label>
+      </div>
+      <div class="setting-group">
+        <span class="setting-label">Ghost</span>
+        <label>Opacity <input id="ghostOpacity" type="range" min="0" max="1" step="0.05" value="0.75"></label>
+        <label>Countdown
+          <select id="countdownSeconds">
+            <option value="3">3 s</option>
+            <option value="5" selected>5 s</option>
+            <option value="10">10 s</option>
+          </select>
+        </label>
+        <label class="check"><input id="loopPractice" type="checkbox" checked> Loop when practising</label>
+      </div>
+    </fieldset>
+  </form>
+
+  <div class="panel ghost-controls">
+    <div class="ghost-actions">
+      <button id="prepareCamera" type="button">Turn on camera</button>
+      <button id="practiceGhost" type="button" class="secondary-button" disabled>Practise with ghost</button>
+      <button id="recordGhost" type="button" disabled>● Record attempt</button>
+      <button id="stopGhost" type="button" class="secondary-button" disabled>Stop</button>
+    </div>
+    <p id="ghostStatus" class="ghost-status" role="status" aria-live="polite">
+      Turn on the camera, then step back until your whole body fits inside the guide.
+    </p>
+    <div id="errorBox" class="message error" hidden>
+      <span id="errorText"></span>
+      <button id="errorAction" type="button" class="secondary-button compact-button" hidden></button>
+    </div>
   </div>
 
-  <section class="panel ghost-setup">
-    <div>
-      <h2>Practice speed</h2>
-      <div class="speed-options" aria-label="Reference playback speed">
-        {% for speed in speeds %}
-          <label>
-            <input type="radio" name="ghostSpeed" value="{{ speed }}" {% if loop.first %}checked{% endif %}>
-            {{ speed }}x
-          </label>
-        {% endfor %}
-      </div>
-    </div>
-
-    <label class="overlay-toggle">
-      <input id="overlayToggle" type="checkbox" checked>
-      Translucent reference overlay
-    </label>
-
-    <div class="ghost-actions">
-      <button id="prepareCamera" type="button">Prepare camera</button>
-      <button id="startGhost" type="button" disabled>Start recording</button>
-      <button id="stopGhost" type="button" disabled>Stop</button>
-    </div>
-
-    <p id="ghostStatus" class="ghost-status" role="status" aria-live="polite">
-      Choose a speed, then prepare the camera.
-    </p>
-  </section>
-
-  <section class="ghost-stage" aria-label="Ghost practice stage">
+  <section class="ghost-stage" aria-label="Practice stage">
     <div class="learner-panel">
-      <video id="cameraPreview" autoplay muted playsinline></video>
-      <video id="referenceOverlay" muted playsinline preload="auto">
-        <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
-      </video>
+      <div class="camera-box">
+        <div id="cameraWrap" class="stage-media mirrored">
+          <video id="cameraPreview" autoplay muted playsinline aria-label="Your camera"></video>
+        </div>
+        <canvas id="ghostCanvas" class="overlay-canvas" aria-hidden="true"></canvas>
+        <div id="countdown" class="countdown" aria-live="assertive" hidden></div>
+        <div id="recBadge" class="rec-badge" hidden>● REC</div>
+      </div>
+      <p class="hint">Dashed box: keep your head and feet inside it. The ghost is the reference dancer's skeleton.</p>
     </div>
-
     <div class="reference-panel">
       <h2>Reference</h2>
-      <video id="referenceVideo" muted playsinline preload="auto">
-        <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
-        Your browser cannot play this video format.
-      </video>
+      <div id="referenceWrap" class="stage-media mirrored">
+        <video id="referenceVideo" playsinline preload="auto">
+          <source src="{{ url_for('video_media', video_id=video.id) }}" type="video/mp4">
+          Your browser cannot play this video.
+        </video>
+      </div>
+      <label class="volume">Music volume <input id="musicVolume" type="range" min="0" max="1" step="0.05" value="0.9"></label>
     </div>
+  </section>
+
+  <section id="savePanel" class="panel save-panel" hidden aria-live="polite">
+    <h2>Your recording</h2>
+    <p id="saveStatus">Saving…</p>
+    <progress id="saveProgress" max="1" value="0"></progress>
+    <div class="row-actions start">
+      <a id="reviewLink" class="button" href="#" hidden>4. Replay and see feedback →</a>
+      <button id="retryUpload" type="button" hidden>Retry upload</button>
+      <a id="downloadLink" class="button secondary" href="#" download hidden>Download recording</a>
+      <button id="recordAgain" type="button" class="secondary-button" hidden>Record another take</button>
+      <button id="discardRecording" type="button" class="secondary-button" hidden>Discard</button>
+    </div>
+    <p class="hint">The recording is kept in this tab until it is saved on the server. It is uploaded without sound;
+      you can delete it from its page at any time. <a href="{{ url_for('privacy') }}">Privacy</a></p>
   </section>
 </section>
 {% endblock %}
-
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/ghost_mode.js') }}" defer></script>
+<script type="module" src="{{ url_for('static', filename='js/ghost_mode.js') }}"></script>
 {% endblock %}

@@ -34,7 +34,7 @@
     <button id="forceBtn">Force re-extract</button>
   </div>
   <pre id="computeOut">(no result yet)</pre>
-  <p class="note">Runs synchronously: a long video will make this request wait. Use the original upload, not the annotated video.</p>
+  <p class="note">Runs synchronously: a long video will make this request wait. Pick a playback file (storage/playback) or an original upload.</p>
 </section>
 
 <section>
@@ -63,7 +63,7 @@
     <select id="videoSel"></select>
     <button id="overlayBtn">Load video + overlay</button>
   </div>
-  <p class="note">Uses the landmark file selected in section 2. The <b style="color:#ff3b30">red</b> skeleton comes from the saved <code>.npz</code>; the green one is baked into the annotated video. They should coincide on every frame, including near the end of the clip.</p>
+  <p class="note">Uses the landmark file selected in section 2. The <b style="color:#ff3b30">red</b> skeleton comes from the saved <code>.npz</code>; compare it with the dancer in the video: they should coincide on every frame, including near the end of the clip.</p>
   <div class="stage"><video id="vid" controls muted playsinline></video><canvas id="cv"></canvas></div>
   <div class="row">
     <button id="prevBtn">&larr; frame</button><button id="nextBtn">frame &rarr;</button>
@@ -86,7 +86,7 @@ function fill(sel, items, emptyText) {
   for (const n of items) { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.append(o); }
 }
 fill($('uploadSel'), UPLOADS, '(no files in storage/uploads)');
-fill($('videoSel'), ANNOTATED, '(no files in storage/annotated)');
+fill($('videoSel'), ANNOTATED, '(no files in storage/playback)');
 fill($('npzSel'), NPZ, '(no .npz files yet: run step 1)');
 
 async function api(url, opts) {

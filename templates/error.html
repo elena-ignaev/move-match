@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Error {{ status }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <p class="eyebrow">Error {{ status }}</p>
+  <h1 class="h-medium">{% if status == 404 %}Not found{% else %}Something went wrong{% endif %}</h1>
+  <p>{{ message or "The page could not be shown." }}</p>
+  <p><a class="button secondary" href="{{ url_for('library') }}">Back to your videos</a></p>
+</section>
+{% endblock %}

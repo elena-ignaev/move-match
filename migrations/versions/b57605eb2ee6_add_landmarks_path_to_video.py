@@ -1,7 +1,7 @@
 """add landmarks_path to video
 
 Revision ID: b57605eb2ee6
-Revises: 
+Revises: 0001_initial
 Create Date: 2026-10-12 14:48:54.985241
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'b57605eb2ee6'
-down_revision = None
+down_revision = '0001_initial'
 branch_labels = None
 depends_on = None
 

@@ -1,0 +1,18 @@
+<article class="video-row">
+  <div>
+    <h3><a href="{{ url_for('video_detail', video_id=video.id) }}">{{ video.original_name }}</a></h3>
+    <p>
+      <span class="status status-{{ video.status }}">{{ video.status|replace('_', ' ') }}</span>
+      {% if video.is_sample %}<span class="status">sample</span>{% endif %}
+      {% if video.duration_s %}<span>{{ '%.0f'|format(video.duration_s) }} s</span>{% endif %}
+      {% if video.created_at %}<span>{{ video.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="row-actions">
+    <a class="button secondary compact" href="{{ url_for('video_detail', video_id=video.id) }}">Open</a>
+    {% if video.status == 'completed' %}
+      <a class="button secondary compact" href="{{ url_for('video_practice', video_id=video.id) }}">Practise</a>
+      <a class="button compact" href="{{ url_for('ghost_mode', video_id=video.id) }}">Record</a>
+    {% endif %}
+  </div>
+</article>

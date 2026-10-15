@@ -1,12 +1,15 @@
-flask
-numpy
-torchvision
-torch 
-mediapipe
-opencv-python
-sqlalchemy
-pymysql
-Flask-SQLAlchemy
-ffmpeg
-pytest
-flask-migrate
+# Runtime dependencies, pinned to the versions verified with Python 3.11 (see docs/setup.md).
+# FFmpeg/ffprobe are system programs, not pip packages: install them separately.
+Flask==3.1.3
+Werkzeug==3.1.9
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.1.4
+Flask-Migrate==4.1.0
+alembic==1.20.0
+Flask-WTF==1.3.0
+python-dotenv==1.2.4
+mediapipe==1.1.0
+# mediapipe already depends on opencv-contrib-python; listing it pins the version.
+# Do not add opencv-python too: the two packages overwrite each other's cv2 module.
+opencv-contrib-python==5.0.0.93
+numpy==2.4.6

@@ -1,4 +1,4 @@
-"""Tests for step 2 (smoothed body scale). Run with: pytest test_scale.py -v"""
+"""Tests for step 2 (smoothed body scale). Run with: pytest tests/test_scale.py -v"""
 
 import numpy as np
 import pytest

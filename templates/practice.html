@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Practise {{ video.original_name }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='css/practice.css') }}">{% endblock %}
+{% block content %}
+<section class="practice-shell"
+         data-video-id="{{ video.id }}"
+         data-fps="{{ video.fps or 30 }}"
+         data-duration="{{ video.duration_s or 0 }}"
+         data-landmarks-url="{{ url_for('api_video_landmarks', video_id=video.id) }}"
+         data-ghost-url="{{ url_for('ghost_mode', video_id=video.id) }}">
+  <div class="practice-heading">
+    <div>
+      <p class="eyebrow">Step 2 · Practise a section</p>
+      <h1 class="h-medium">{{ video.original_name }}</h1>
+    </div>
+    <a class="button secondary" href="{{ url_for('video_detail', video_id=video.id) }}">Video overview</a>
+  </div>
+  {% set current = 2 %}{% include "_journey.html" %}
+
+  <div class="stage">
+    <div id="mediaWrap" class="stage-media">
+      <video id="danceVideo" preload="auto" playsinline aria-label="Reference dance video">
+        <source src="{{ url_for('video_media', video_id=video.id) }}" type="video/mp4">
+        Your browser does not support HTML5 video.
+      </video>
+      <canvas id="skeletonCanvas" class="overlay-canvas" aria-hidden="true"></canvas>
+    </div>
+    <p id="mediaError" class="message error" hidden></p>
+  </div>
+
+  <input id="timeline" type="range" min="0" max="1000" value="0" step="1" aria-label="Video timeline">
+  <div class="timeline-section" aria-hidden="true"><div id="sectionBar"></div></div>
+  <div id="frameInfo" class="frame-info" aria-live="off">0:00.0 · frame 0</div>
+
+  <div class="practice-controls" aria-label="Playback controls">
+    <button id="prevFrame" type="button" title="Previous frame (←)">◀ Frame</button>
+    <button id="playPause" type="button" title="Play / pause (space)">Play</button>
+    <button id="nextFrame" type="button" title="Next frame (→)">Frame ▶</button>
+    <label class="speed-control">Speed
+      <select id="speed">
+        <option value="0.25">0.25×</option>
+        <option value="0.5" selected>0.5×</option>
+        <option value="0.75">0.75×</option>
+        <option value="1">1× (normal)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="panel section-panel">
+    <h2>Section</h2>
+    <div class="section-grid">
+      <label>Start (s) <input id="sectionStart" type="number" min="0" step="0.1" value="0"></label>
+      <button id="setStart" type="button" class="secondary-button" title="Set start to current time ([)">Start = now</button>
+      <label>End (s) <input id="sectionEnd" type="number" min="0" step="0.1" value="{{ '%.1f'|format(video.duration_s or 0) }}"></label>
+      <button id="setEnd" type="button" class="secondary-button" title="Set end to current time (])">End = now</button>
+      <label class="check"><input id="loopToggle" type="checkbox" checked> Loop section (L)</label>
+      <button id="clearSection" type="button" class="secondary-button">Whole video</button>
+    </div>
+    <div class="inline-controls">
+      <label class="check"><input id="mirrorToggle" type="checkbox" checked> Mirror view</label>
+      <label class="check"><input id="skeletonToggle" type="checkbox" checked> Skeleton</label>
+      <label>Skeleton opacity <input id="skeletonOpacity" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+    </div>
+    <p class="hint">Mirror view flips the picture so the dancer's right hand appears on your right, like a
+      dance-studio mirror: copy the side of the screen and you move the correct side of your body.
+      Short sections of 4–10 seconds are easiest to learn and give the clearest feedback.</p>
+    <a id="recordLink" class="button" href="{{ url_for('ghost_mode', video_id=video.id) }}">3. Record this section →</a>
+  </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/practice.js') }}"></script>
+{% endblock %}

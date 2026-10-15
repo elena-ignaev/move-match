@@ -1,3 +1,5 @@
+> **Historical planning notes.** Written before implementation. What was actually built differs in places, especially the weighted 0–100 score, which was not shipped. See `docs/technical_decisions.md` for the current design.
+
 1. Overall architecture
 Reference dance (Annotated video + MediaPipe landmark sequence)
 --> Learner performance (Recorded video/Live camera frames --> MediaPipe landmarks)
