@@ -28,6 +28,14 @@ specific enough to act on, so that group rehearsals can focus on bringing the pe
 *A 60–90 second demo video of one complete journey is planned; see [`docs/demo_script.md`](docs/demo_script.md)
 for the shot list.*
 
+## Screenshots
+
+| Practise a section | Record with the ghost | Feedback |
+|---|---|---|
+| ![Practice page](docs/images/manual/04_practice.jpg) | ![Recording](docs/images/manual/10_ghost_recording.jpg) | ![Feedback](docs/images/manual/14_feedback.jpg) |
+
+More in [`docs/images/manual/`](docs/images/manual/).
+
 ## The journey
 
 1. **Choose a short reference** (≤ 90 s; one dancer, full body, front view). Processing runs in the background
