@@ -36,7 +36,51 @@
         <source src="{{ url_for('annotated_video', video_id=video.id) }}" type="video/mp4">
         Your browser cannot play this video format.
       </video>
+<<<<<<< Updated upstream
     </article>
+=======
+      <canvas id="skeletonCanvas" class="overlay-canvas" aria-hidden="true"></canvas>
+    </div>
+  </div>
+  <dl class="details-list compact-list">
+    <div><dt>Length</dt><dd>{{ '%.1f'|format(video.duration_s or 0) }} s</dd></div>
+    <div><dt>Playback</dt><dd>{{ video.width }}×{{ video.height }}, {{ '%.0f'|format(video.fps or 0) }} fps constant frame rate</dd></div>
+    <div><dt>Music</dt><dd>{{ "kept" if video.has_audio else "this video has no audio track" }}</dd></div>
+    <div><dt>Dancer tracked</dt><dd>{{ '%.0f'|format((video.detected_ratio or 0) * 100) }}% of frames</dd></div>
+  </dl>
+  {% if video.progress_message %}<p class="message">{{ video.progress_message }}</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Attempts</h2>
+  {% if attempts %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>When</th><th>Section</th><th>Speed</th><th>Status</th><th>Score</th><th>Timing</th><th>Key moments</th><th>Median angle diff.</th><th></th></tr></thead>
+      <tbody>
+      {% for attempt in attempts %}
+        {% set ev = attempt.evaluation %}
+        <tr>
+          <td>{{ attempt.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td>{{ attempt.section_start_s|clock }}–{{ attempt.section_end_s|clock }}</td>
+          <td>{{ attempt.speed }}×</td>
+          <td><span class="status status-{{ attempt.status }}">{{ attempt.status }}</span></td>
+          {% set sc = attempt|attempt_score %}
+          <td class="score-cell">{% if sc is not none %}<strong>{{ sc }}</strong>{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.timing_confident %}{{ ev.timing_offset_s|signed_s }}{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.moments_total %}{{ ev.moments_close }} close / {{ ev.moments_review }} review of {{ ev.moments_total }}{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.median_angle_diff_deg is not none %}{{ '%.0f'|format(ev.median_angle_diff_deg) }}°{% else %}–{% endif %}</td>
+          <td><a href="{{ url_for('attempt_detail', attempt_id=attempt.id) }}">Replay &amp; feedback</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">Score: a provisional 0–100 summary (posture 70%, timing 20%, completion 10%); none when feedback was withheld. Positive timing = you were behind the reference. Angle differences are measured at the same key moments for every attempt at the same section.</p>
+  {% else %}
+    <p>No attempts yet.{% if video.status == 'completed' %} <a href="{{ url_for('ghost_mode', video_id=video.id) }}">Record your first attempt</a>.{% endif %}</p>
+>>>>>>> Stashed changes
   {% endif %}
 </section>
 

@@ -58,10 +58,29 @@ class Evaluation(db.Model):
         nullable = False
     )
 
+<<<<<<< Updated upstream
     speed = db.Column(db.Float, nullable=False)
     score = db.Column(db.Float)
     pose_score = db.Column(db.Float)
     timing_score = db.Column(db.Float)
+=======
+    id = db.Column(db.Integer, primary_key=True)
+    attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=False, unique=True)
+    video_id = db.Column(db.Integer, db.ForeignKey("video.id"), nullable=False, index=True)
+
+    algorithm_version = db.Column(db.String(20), nullable=False)
+    withheld = db.Column(db.Boolean, nullable=False, default=False)
+    tracking_status = db.Column(db.String(20), nullable=True)           # good | partial | poor
+
+    timing_offset_s = db.Column(db.Float, nullable=True)                # + = learner late, wall-clock seconds
+    timing_confident = db.Column(db.Boolean, nullable=True)
+    moments_total = db.Column(db.Integer, nullable=True)
+    moments_close = db.Column(db.Integer, nullable=True)
+    moments_review = db.Column(db.Integer, nullable=True)
+    median_angle_diff_deg = db.Column(db.Float, nullable=True)
+    score = db.Column(db.Float, nullable=True)                         # provisional 0-100, None when withheld
+    score_version = db.Column(db.String(20), nullable=True)
+>>>>>>> Stashed changes
 
     details_json = db.Column(db.JSON)
     completed_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

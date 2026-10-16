@@ -1,3 +1,8 @@
+<<<<<<< Updated upstream
+=======
+> **Historical planning notes.** Written before implementation. What was actually built differs in places, especially the score: the weighted 0–100 score was rebuilt from interpretable measurements (see technical_decisions.md, 6a). See `docs/technical_decisions.md` for the current design.
+
+>>>>>>> Stashed changes
 1. Overall architecture
 Reference dance (Annotated video + MediaPipe landmark sequence)
 --> Learner performance (Recorded video/Live camera frames --> MediaPipe landmarks)
