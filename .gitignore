@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local configuration and data (never commit recordings or databases)
+.env
+instance/
+storage/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Models are downloaded by scripts/download_model.py
+pretrained_models/
+
+# Generated output
+tests/output/
+research/output/
+evaluation/output/
+.DS_Store
+
+# Local tool configuration
+.claude/
