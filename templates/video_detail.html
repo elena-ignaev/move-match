@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | {{ video.original_name }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='css/practice.css') }}">{% endblock %}
+{% block content %}
+<section class="section-block">
+  <p><a href="{{ url_for('library') }}">← Your videos</a></p>
+  <div class="detail-heading">
+    <div>
+      <p class="eyebrow">Reference video</p>
+      <h1 class="h-medium">{{ video.original_name }}</h1>
+      <p><span id="videoStatus" class="status status-{{ video.status }}">{{ video.status|replace('_', ' ') }}</span></p>
+    </div>
+    {% if video.status == 'completed' %}
+      <div class="row-actions">
+        <a class="button secondary" href="{{ url_for('video_practice', video_id=video.id) }}">2. Practise a section</a>
+        <a class="button" href="{{ url_for('ghost_mode', video_id=video.id) }}">3. Record an attempt</a>
+      </div>
+    {% endif %}
+  </div>
+  {% set current = 2 if video.status == 'completed' else 1 %}{% include "_journey.html" %}
+</section>
+
+{% if video.status in ('queued', 'processing') %}
+<section class="panel" id="processingPanel"
+         data-status-url="{{ url_for('api_video_status', video_id=video.id) }}">
+  <h2>Processing</h2>
+  <progress id="processingProgress" max="1" value="{{ video.progress }}"></progress>
+  <p id="processingMessage" role="status" aria-live="polite">{{ video.progress_message or "Waiting to start" }}</p>
+  <p class="hint">You can leave this page; processing continues on the server.</p>
+</section>
+{% elif video.status == 'failed' %}
+<section class="panel">
+  <h2>Processing failed</h2>
+  <p class="message error">{{ video.error_message or "Processing failed." }}</p>
+  {% if can_modify %}
+  <div class="row-actions start">
+    <form method="post" action="{{ url_for('reprocess_video', video_id=video.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Try processing again</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+{% elif video.status == 'needs_reprocessing' %}
+<section class="panel">
+  <h2>Reprocessing needed</h2>
+  <p>This video was processed by an earlier version that dropped the music and timed landmarks from the nominal
+    frame rate. Reprocess it to get playback with audio and accurate timing.</p>
+  {% if can_modify %}
+  <form method="post" action="{{ url_for('reprocess_video', video_id=video.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Reprocess now</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if video.status == 'completed' %}
+<section class="panel">
+  <div class="section-heading">
+    <h2>Reference</h2>
+    <div class="inline-controls">
+      <label><input id="skeletonToggle" type="checkbox" checked> Skeleton</label>
+      <label>Opacity <input id="skeletonOpacity" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+    </div>
+  </div>
+  <div class="stage" data-landmarks-url="{{ url_for('api_video_landmarks', video_id=video.id) }}">
+    <div class="stage-media">
+      <video id="referenceVideo" controls preload="metadata" playsinline>
+        <source src="{{ url_for('video_media', video_id=video.id) }}" type="video/mp4">
+        Your browser cannot play this video.
+      </video>
+      <canvas id="skeletonCanvas" class="overlay-canvas" aria-hidden="true"></canvas>
+    </div>
+  </div>
+  <dl class="details-list compact-list">
+    <div><dt>Length</dt><dd>{{ '%.1f'|format(video.duration_s or 0) }} s</dd></div>
+    <div><dt>Playback</dt><dd>{{ video.width }}×{{ video.height }}, {{ '%.0f'|format(video.fps or 0) }} fps constant frame rate</dd></div>
+    <div><dt>Music</dt><dd>{{ "kept" if video.has_audio else "this video has no audio track" }}</dd></div>
+    <div><dt>Dancer tracked</dt><dd>{{ '%.0f'|format((video.detected_ratio or 0) * 100) }}% of frames</dd></div>
+  </dl>
+  {% if video.progress_message %}<p class="message">{{ video.progress_message }}</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Attempts</h2>
+  {% if attempts %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>When</th><th>Section</th><th>Speed</th><th>Status</th><th>Score</th><th>Timing</th><th>Key moments</th><th>Median angle diff.</th><th></th></tr></thead>
+      <tbody>
+      {% for attempt in attempts %}
+        {% set ev = attempt.evaluation %}
+        <tr>
+          <td>{{ attempt.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td>{{ attempt.section_start_s|clock }}–{{ attempt.section_end_s|clock }}</td>
+          <td>{{ attempt.speed }}×</td>
+          <td><span class="status status-{{ attempt.status }}">{{ attempt.status }}</span></td>
+          {% set sc = attempt|attempt_score %}
+          <td class="score-cell">{% if sc is not none %}<strong>{{ sc }}</strong>{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.timing_confident %}{{ ev.timing_offset_s|signed_s }}{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.moments_total %}{{ ev.moments_close }} close / {{ ev.moments_review }} review of {{ ev.moments_total }}{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.median_angle_diff_deg is not none %}{{ '%.0f'|format(ev.median_angle_diff_deg) }}°{% else %}–{% endif %}</td>
+          <td><a href="{{ url_for('attempt_detail', attempt_id=attempt.id) }}">Replay &amp; feedback</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">Score: a provisional 0–100 summary (posture 70%, timing 20%, completion 10%); none when feedback was withheld. Positive timing = you were behind the reference. Angle differences are measured at the same key moments for every attempt at the same section.</p>
+  {% else %}
+    <p>No attempts yet.{% if video.status == 'completed' %} <a href="{{ url_for('ghost_mode', video_id=video.id) }}">Record your first attempt</a>.{% endif %}</p>
+  {% endif %}
+</section>
+
+{% if can_modify and video.status not in ('queued', 'processing') %}
+<section class="panel danger-zone">
+  <h2>Delete</h2>
+  <p>Deletes the uploaded video, its processed files and all {{ attempts|length }} attempt(s). This cannot be undone.</p>
+  <form method="post" action="{{ url_for('delete_video', video_id=video.id) }}" data-confirm="Delete this video and all of its attempts?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="danger">Delete video</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/video_detail.js') }}"></script>
+{% endblock %}

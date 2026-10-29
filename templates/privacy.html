@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Privacy and data{% endblock %}
+{% block content %}
+<section class="panel prose">
+  <p class="eyebrow">Privacy and data</p>
+  <h1 class="h-medium">What MoveMatch stores, where, and for how long</h1>
+
+  <h2>What is uploaded</h2>
+  <ul>
+    <li><strong>Reference videos</strong> you upload (the original file).</li>
+    <li><strong>Practice recordings</strong>: the camera video recorded while you press Record, without sound.
+      The microphone is never used. Nothing is recorded during countdowns, previews or ghost practice without
+      recording.</li>
+    <li>A small <strong>timing log</strong> of the reference playback during a recording (play, pause, buffering and
+      the reference time of each displayed frame), your chosen section, speed and mirror settings, and your
+      browser's name.</li>
+  </ul>
+
+  <h2>Where it is stored</h2>
+  <p>
+    Everything stays on the server running MoveMatch, in its <code>storage/</code> folder and a SQLite database.
+    {% if not public_demo %}In local mode that server is your own computer.{% endif %}
+    From each video the server derives a browser-playable copy and a file of body-landmark coordinates
+    (33 points per frame, computed by Google's MediaPipe model running on this server). Nothing is sent to
+    third-party services.
+  </p>
+
+  <h2>Who can see it</h2>
+  {% if public_demo %}
+    <p>Your browser gets a random, anonymous session id. Only that browser can see the attempts and videos it
+      created. Clearing your cookies means you can no longer open them (they are still deleted on schedule).</p>
+  {% else %}
+    <p>This server runs in single-user local mode: anyone who can open this page on this computer can see all videos and attempts.</p>
+  {% endif %}
+
+  <h2>When it is deleted</h2>
+  <ul>
+    <li>You can delete any attempt (on its page) or any reference video with all its attempts (on the video page)
+      at any time. Deletion removes the files and the database rows immediately.</li>
+    <li>The raw browser recording is deleted as soon as its replay copy is created.</li>
+    {% if limits.retention_h %}
+      <li>On this demo, uploads and recordings are deleted automatically after {{ limits.retention_h|int }} hours.</li>
+    {% else %}
+      <li>Otherwise files are kept until you delete them.</li>
+    {% endif %}
+  </ul>
+</section>
+{% endblock %}

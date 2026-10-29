@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Attempt {{ attempt.id }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='css/attempt.css') }}">{% endblock %}
+{% block content %}
+<section class="section-block">
+  <p><a href="{{ url_for('video_detail', video_id=video.id) }}">← {{ video.original_name }}</a></p>
+  <div class="detail-heading">
+    <div>
+      <p class="eyebrow">Steps 4–6 · Replay, feedback, retry</p>
+      <h1 class="h-medium">Attempt {{ attempt.id }}</h1>
+      <p class="meta-line">
+        <span id="attemptStatus" class="status status-{{ attempt.status }}">{{ attempt.status }}</span>
+        <span>Section {{ attempt.section_start_s|clock }}–{{ attempt.section_end_s|clock }}</span>
+        <span>{{ attempt.speed }}× speed</span>
+        <span>{{ "Mirror view" if attempt.view_mirrored else "Camera view" }}{% if attempt.follow_mode == 'mirror' %}, mirror-image dancing{% endif %}</span>
+        <span>{{ attempt.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+      </p>
+    </div>
+    <div class="row-actions">
+      <a class="button" href="{{ url_for('ghost_mode', video_id=video.id) }}?start={{ attempt.section_start_s }}{% if attempt.section_end_s %}&amp;end={{ attempt.section_end_s }}{% endif %}&amp;speed={{ attempt.speed }}&amp;mirror={{ 1 if attempt.view_mirrored else 0 }}&amp;follow={{ attempt.follow_mode }}">6. Try again</a>
+    </div>
+  </div>
+  {% set current = 4 if attempt.status in ('uploaded', 'processing') else 5 %}{% include "_journey.html" %}
+</section>
+
+<script id="attemptData" type="application/json">{{ payload|tojson }}</script>
+
+<section class="panel replay-panel"
+         data-api-url="{{ url_for('api_attempt', attempt_id=attempt.id) }}"
+         data-landmarks-url="{{ url_for('api_video_landmarks', video_id=video.id) }}"
+         data-reference-duration="{{ video.duration_s or 0 }}">
+  <div class="section-heading">
+    <h2>Replay</h2>
+    <div class="inline-controls" role="group" aria-label="Replay view">
+      <label class="check"><input type="radio" name="replayView" value="side" checked> Side by side</label>
+      <label class="check"><input type="radio" name="replayView" value="overlay"> Ghost overlay</label>
+    </div>
+  </div>
+  <div id="replayStage" class="replay-stage view-side">
+    <figure class="replay-figure">
+      <div class="camera-box">
+        <div class="stage-media {% if attempt.view_mirrored %}mirrored{% endif %}">
+          <video id="attemptVideo" playsinline preload="auto" muted aria-label="Your attempt">
+            <source src="{{ url_for('attempt_recording', attempt_id=attempt.id) }}">
+          </video>
+        </div>
+        <canvas id="ghostCanvas" class="overlay-canvas" aria-hidden="true"></canvas>
+      </div>
+      <figcaption>You</figcaption>
+    </figure>
+    <figure class="replay-figure reference-figure">
+      <div class="stage-media {% if attempt.view_mirrored != (attempt.follow_mode == 'mirror') %}mirrored{% endif %}">
+        <video id="referenceVideo" playsinline preload="auto" aria-label="Reference">
+          <source src="{{ url_for('video_media', video_id=video.id) }}" type="video/mp4">
+        </video>
+      </div>
+      <figcaption>Reference (synced to the moment you were shown)</figcaption>
+    </figure>
+  </div>
+  <p id="replayError" class="message error" hidden></p>
+  <input id="replayTimeline" type="range" min="0" max="1000" value="0" aria-label="Replay position">
+  <div class="replay-controls">
+    <button id="replayPlay" type="button">Play</button>
+    <span id="replayTime" class="mono">0:00.0</span>
+    <label>Replay speed
+      <select id="replaySpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option></select>
+    </label>
+    <label class="check" title="Shift the reference by your measured delay, to compare shapes without the timing">
+      <input id="applyOffset" type="checkbox"> Remove my timing delay</label>
+    <label>Ghost opacity <input id="ghostOpacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+  </div>
+  <p id="syncNote" class="hint"></p>
+</section>
+
+<section class="panel feedback-panel" aria-live="polite">
+  <h2>Feedback</h2>
+  <div id="processingBox" {% if attempt.status not in ('uploaded', 'processing') %}hidden{% endif %}>
+    <progress id="attemptProgress" max="1" value="{{ attempt.progress }}"></progress>
+    <p>Analysing your recording… You can already replay it above.</p>
+  </div>
+  <div id="feedbackBody"></div>
+  <p class="hint disclaimer">How to read this: timing and posture are measured separately. Posture is checked at
+    key moments chosen from the reference (held poses and hits), with your delay removed. Joint angles come
+    from one camera and a pretrained pose model and are often off by 10–15°, so only differences above
+    20° are flagged. The score is a provisional summary of these same measurements (posture 70%,
+    timing 20%, completion 10%). It has not yet been checked against a teacher's judgment, so read the notes, not just the number.</p>
+</section>
+
+<section class="panel" id="comparePanel">
+  <h2>Retry and compare</h2>
+  <div id="comparisonBody"></div>
+  {% if history|length > 1 %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption>All attempts at this section</caption>
+      <thead><tr><th>Attempt</th><th>When</th><th>Speed</th><th>Score</th><th>Timing</th><th>Close</th><th>Review</th><th>Median angle diff.</th></tr></thead>
+      <tbody>
+      {% for a in history %}{% set ev = a.evaluation %}
+        <tr {% if a.id == attempt.id %}class="is-current"{% endif %}>
+          <td><a href="{{ url_for('attempt_detail', attempt_id=a.id) }}">#{{ a.id }}</a></td>
+          <td>{{ a.created_at.strftime('%m-%d %H:%M') }}</td>
+          <td>{{ a.speed }}×</td>
+          {% set sc = a|attempt_score %}
+          <td>{% if sc is not none %}<strong>{{ sc }}</strong>{% else %}–{% endif %}</td>
+          <td>{% if ev and ev.timing_confident %}{{ ev.timing_offset_s|signed_s }}{% elif ev and ev.withheld %}withheld{% else %}–{% endif %}</td>
+          <td>{{ ev.moments_close if ev and ev.moments_total else "–" }}</td>
+          <td>{{ ev.moments_review if ev and ev.moments_total else "–" }}</td>
+          <td>{% if ev and ev.median_angle_diff_deg is not none %}{{ '%.0f'|format(ev.median_angle_diff_deg) }}°{% else %}–{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p>Record another take of the same section to compare attempts moment by moment.</p>
+  {% endif %}
+</section>
+
+<section class="panel danger-zone">
+  <h2>Manage</h2>
+  <div class="row-actions start">
+    {% if attempt.status not in ('uploaded', 'processing') %}
+    <form method="post" action="{{ url_for('reevaluate_attempt', attempt_id=attempt.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="secondary-button">Re-evaluate</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('delete_attempt', attempt_id=attempt.id) }}" data-confirm="Delete this attempt and its recording?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="danger">Delete attempt</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/attempt.js') }}"></script>
+{% endblock %}

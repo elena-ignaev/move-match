@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Setup needed{% endblock %}
+{% block content %}
+<section class="panel">
+  <p class="eyebrow">Setup needed</p>
+  <h1 class="h-medium">The database is not ready</h1>
+  <p>{{ problem }}</p>
+  <pre class="code">flask db upgrade</pre>
+  <p>Then restart the server. Full instructions are in <code>docs/setup.md</code>.</p>
+</section>
+{% endblock %}

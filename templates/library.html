@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Your videos{% endblock %}
+{% block content %}
+<section class="section-block">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Step 1</p>
+      <h1 class="h-medium">Choose a reference</h1>
+    </div>
+    {% if uploads_allowed %}<a class="button secondary" href="{{ url_for('index') }}">Upload new</a>{% endif %}
+  </div>
+  {% if videos %}
+    <div class="video-list">
+      {% for video in videos %}
+        {% include "_video_row.html" %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No videos yet.</p>
+      {% if uploads_allowed %}<a class="button" href="{{ url_for('index') }}">Upload a dance video</a>{% endif %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}MoveMatch | Learn choreography section by section{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Dance practice with a camera</p>
+  <h1>Learn a routine section by section, then see where your attempt differed.</h1>
+  <p class="lede">
+    Learning choreography from a video is hard: you can't see yourself, it's easy to mirror the
+    wrong side, and "it looks off" doesn't tell you what to fix. MoveMatch lets you slow down and
+    loop a section, record yourself dancing along with a ghost skeleton, replay your attempt next to
+    the reference, and get specific notes: when you were late, and which joints differed at key moments.
+  </p>
+  {% set current = 1 %}{% include "_journey.html" %}
+</section>
+
+{% if samples %}
+<section class="section-block">
+  <div class="section-heading"><h2>Sample routines</h2></div>
+  <div class="video-list">
+    {% for video in samples %}
+      {% include "_video_row.html" %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="choice-grid" aria-label="Video options">
+  {% if uploads_allowed %}
+  <article class="panel">
+    <h2>1. Choose a short reference</h2>
+    <p>
+      Upload a clip of one dancer, full body visible, filmed from the front with a still camera.
+      Up to {{ limits.reference_s|int }} s and {{ limits.reference_mb }} MB (MP4, MOV, WEBM, MKV, AVI, M4V).
+      The music is kept.
+    </p>
+    <form id="uploadForm" class="upload-form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data"
+          data-max-mb="{{ limits.reference_mb }}" data-max-seconds="{{ limits.reference_s }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input id="videoFile" type="file" name="video_file" accept="video/*" required>
+      <button id="uploadButton" type="submit">Upload and analyse</button>
+      <progress id="uploadProgress" max="1" value="0" hidden></progress>
+      <p id="uploadStatus" class="hint" role="status" aria-live="polite"></p>
+    </form>
+    <p class="hint">Processing runs in the background after the upload; you can watch its progress.
+      <a href="{{ url_for('privacy') }}">What happens to my video?</a></p>
+  </article>
+  {% endif %}
+
+  <article class="panel accent-panel">
+    <h2>Continue practising</h2>
+    <p>Open a reference you already processed, replay earlier attempts, or compare your progress.</p>
+    <a class="button secondary" href="{{ url_for('library') }}">Your videos</a>
+  </article>
+</section>
+
+{% if recent_videos %}
+<section class="section-block">
+  <div class="section-heading">
+    <h2>Recent videos</h2>
+    <a href="{{ url_for('library') }}">See all</a>
+  </div>
+  <div class="video-list">
+    {% for video in recent_videos %}
+      {% include "_video_row.html" %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script type="module" src="{{ url_for('static', filename='js/home.js') }}"></script>
+{% endblock %}
